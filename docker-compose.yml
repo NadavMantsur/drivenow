@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: drivenow
+      POSTGRES_PASSWORD: drivenow
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drivenow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  fleet:
+    build:
+      context: .
+      dockerfile: services/fleet_service/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://drivenow:drivenow@postgres:5432/fleet_db
+      LOG_DIR: /app/logs
+      LOG_LEVEL: INFO
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  rental:
+    build:
+      context: .
+      dockerfile: services/rental_service/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://drivenow:drivenow@postgres:5432/rental_db
+      FLEET_SERVICE_URL: http://fleet:8000
+      LOG_DIR: /app/logs
+      LOG_LEVEL: INFO
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fleet:
+        condition: service_started
+
+volumes:
+  postgres_data:

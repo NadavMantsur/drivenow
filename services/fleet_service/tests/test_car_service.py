@@ -1,0 +1,73 @@
+from unittest.mock import MagicMock
+
+import pytest
+
+from drivenow_shared.enums import CarStatus
+
+from app.domain.events import NoOpEventPublisher
+from app.domain.exceptions import ConflictError, InvalidStatusTransitionError
+from app.domain.status_strategy import CarStatusStrategy
+from app.repositories.models import CarModel
+from app.schemas.car import CarCreate, CarUpdate
+from app.services.car_service import CarService
+
+
+def test_add_car_defaults_to_available():
+    repo = MagicMock()
+    created = CarModel(id=1, model="Corolla", year=2024, status=CarStatus.AVAILABLE)
+    repo.add.return_value = created
+    repo.count_by_status.return_value = 1
+
+    service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
+    result = service.add_car(CarCreate(model="Corolla", year=2024))
+
+    assert result.status == CarStatus.AVAILABLE
+    assert repo.add.called
+
+
+def test_update_car_rejects_illegal_status_transition():
+    repo = MagicMock()
+    repo.get_by_id_for_update.return_value = CarModel(
+        id=1,
+        model="Corolla",
+        year=2024,
+        status=CarStatus.UNDER_MAINTENANCE,
+    )
+    service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
+
+    with pytest.raises(InvalidStatusTransitionError, match="Cannot transition"):
+        service.update_car(1, CarUpdate(status=CarStatus.IN_USE))
+
+
+def test_compare_and_set_status_success():
+    repo = MagicMock()
+    updated = CarModel(id=1, model="Corolla", year=2024, status=CarStatus.IN_USE)
+    repo.transition_status.return_value = updated
+    repo.count_by_status.return_value = 0
+
+    service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
+    result = service.update_car(
+        1,
+        CarUpdate(status=CarStatus.IN_USE, expected_status=CarStatus.AVAILABLE),
+    )
+
+    assert result.status == CarStatus.IN_USE
+    repo.transition_status.assert_called_once_with(
+        1, CarStatus.AVAILABLE, CarStatus.IN_USE
+    )
+
+
+def test_compare_and_set_status_conflict():
+    repo = MagicMock()
+    repo.transition_status.return_value = None
+    repo.get_by_id.return_value = CarModel(
+        id=1, model="Corolla", year=2024, status=CarStatus.IN_USE
+    )
+
+    service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
+
+    with pytest.raises(ConflictError, match="expected 'available'"):
+        service.update_car(
+            1,
+            CarUpdate(status=CarStatus.IN_USE, expected_status=CarStatus.AVAILABLE),
+        )
