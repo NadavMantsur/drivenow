@@ -1,4 +1,4 @@
-"""Domain event payload contracts (Phase 2 will publish these via RabbitMQ)."""
+"""Domain event payload contracts shared across services."""
 
 from datetime import datetime, timezone
 from typing import Any
