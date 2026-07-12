@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "feature/**"]
+  pull_request:
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            services/fleet_service/requirements.txt
+            services/rental_service/requirements.txt
+
+      - name: Install fleet dependencies
+        run: pip install -r services/fleet_service/requirements.txt
+
+      - name: Test fleet-service
+        env:
+          PYTHONPATH: shared:services/fleet_service
+        run: pytest services/fleet_service/tests -q
+
+      - name: Install rental dependencies
+        run: pip install -r services/rental_service/requirements.txt
+
+      - name: Test rental-service
+        env:
+          PYTHONPATH: shared:services/rental_service
+        run: pytest services/rental_service/tests -q
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build fleet image
+        run: docker build -f services/fleet_service/Dockerfile -t drivenow/fleet:ci .
+
+      - name: Build rental image
+        run: docker build -f services/rental_service/Dockerfile -t drivenow/rental:ci .

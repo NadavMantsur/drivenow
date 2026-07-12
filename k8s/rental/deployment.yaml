@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rental
+  namespace: drivenow
+  labels:
+    app: rental
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rental
+  template:
+    metadata:
+      labels:
+        app: rental
+    spec:
+      containers:
+        - name: rental
+          image: drivenow/rental:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DATABASE_URL_RENTAL
+            - name: FLEET_SERVICE_URL
+              value: http://fleet:8000
+            - name: LOG_DIR
+              value: /app/logs
+            - name: LOG_LEVEL
+              value: INFO
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rental
+  namespace: drivenow
+  labels:
+    app: rental
+spec:
+  selector:
+    app: rental
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      nodePort: 30002
+  type: NodePort

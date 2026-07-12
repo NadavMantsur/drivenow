@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet
+  namespace: drivenow
+  labels:
+    app: fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fleet
+  template:
+    metadata:
+      labels:
+        app: fleet
+    spec:
+      containers:
+        - name: fleet
+          image: drivenow/fleet:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DATABASE_URL_FLEET
+            - name: LOG_DIR
+              value: /app/logs
+            - name: LOG_LEVEL
+              value: INFO
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleet
+  namespace: drivenow
+  labels:
+    app: fleet
+spec:
+  selector:
+    app: fleet
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      nodePort: 30001
+  type: NodePort

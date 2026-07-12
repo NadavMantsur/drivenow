@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: phase3-cicd-k8s
     content: "Phase 3: GitHub Actions CI + Kubernetes manifests for Phase 1 stack"
-    status: pending
+    status: completed
   - id: readme-git
     content: "README before Phase 2: architecture, patterns, how to run, API examples, CI/K8s; EventPublisher stub noted; feature branch / public repo"
     status: pending
