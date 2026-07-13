@@ -13,6 +13,22 @@ from app.schemas.rental import RentalCreate
 from app.services.rental_service import RentalService
 
 
+def _rental(
+    rental_id: int,
+    *,
+    car_id: int = 1,
+    customer: str = "Alice",
+    ended: bool = False,
+) -> RentalModel:
+    return RentalModel(
+        id=rental_id,
+        car_id=car_id,
+        customer_name=customer,
+        start_date=datetime.now(timezone.utc),
+        end_date=datetime.now(timezone.utc) if ended else None,
+    )
+
+
 def test_register_rental_fails_when_car_not_available():
     repo = MagicMock()
     repo.has_ongoing_for_car.return_value = False
@@ -25,16 +41,45 @@ def test_register_rental_fails_when_car_not_available():
         service.register_rental(RentalCreate(car_id=1, customer_name="Alice"))
 
 
+def test_list_rentals_returns_all_when_no_filter():
+    repo = MagicMock()
+    repo.list.return_value = [_rental(1), _rental(2, ended=True)]
+    service = RentalService(repo, MagicMock(), NoOpEventPublisher())
+
+    result = service.list_rentals()
+
+    assert len(result) == 2
+    repo.list.assert_called_once_with(ongoing=None)
+
+
+def test_list_rentals_filters_ongoing():
+    repo = MagicMock()
+    repo.list.return_value = [_rental(1)]
+    service = RentalService(repo, MagicMock(), NoOpEventPublisher())
+
+    result = service.list_rentals(ongoing=True)
+
+    assert len(result) == 1
+    assert result[0].end_date is None
+    repo.list.assert_called_once_with(ongoing=True)
+
+
+def test_list_rentals_filters_ended():
+    repo = MagicMock()
+    repo.list.return_value = [_rental(2, ended=True)]
+    service = RentalService(repo, MagicMock(), NoOpEventPublisher())
+
+    result = service.list_rentals(ongoing=False)
+
+    assert len(result) == 1
+    assert result[0].end_date is not None
+    repo.list.assert_called_once_with(ongoing=False)
+
+
 def test_register_rental_marks_car_in_use():
     repo = MagicMock()
     repo.has_ongoing_for_car.return_value = False
-    created = RentalModel(
-        id=10,
-        car_id=1,
-        customer_name="Alice",
-        start_date=datetime.now(timezone.utc),
-        end_date=None,
-    )
+    created = _rental(10)
     repo.add.return_value = created
     repo.count_ongoing.return_value = 1
 
@@ -53,13 +98,7 @@ def test_register_rental_marks_car_in_use():
 
 def test_end_rental_restores_available():
     repo = MagicMock()
-    rental = RentalModel(
-        id=10,
-        car_id=1,
-        customer_name="Alice",
-        start_date=datetime.now(timezone.utc),
-        end_date=None,
-    )
+    rental = _rental(10)
     repo.get_by_id.return_value = rental
     repo.save.side_effect = lambda r: r
     repo.count_ongoing.return_value = 0
@@ -133,13 +172,7 @@ def test_register_concurrent_integrity_error_is_conflict_without_compensate():
 def test_end_aborts_when_fleet_restore_fails():
     """Fleet CAS fails before DB write — rental stays open."""
     repo = MagicMock()
-    rental = RentalModel(
-        id=10,
-        car_id=1,
-        customer_name="Alice",
-        start_date=datetime.now(timezone.utc),
-        end_date=None,
-    )
+    rental = _rental(10)
     repo.get_by_id.return_value = rental
 
     fleet = MagicMock()
@@ -157,13 +190,7 @@ def test_end_aborts_when_fleet_restore_fails():
 def test_end_compensates_when_persist_fails_after_fleet():
     """Fleet restored available, then DB save fails → compensate car back to in_use."""
     repo = MagicMock()
-    rental = RentalModel(
-        id=10,
-        car_id=1,
-        customer_name="Alice",
-        start_date=datetime.now(timezone.utc),
-        end_date=None,
-    )
+    rental = _rental(10)
     repo.get_by_id.return_value = rental
     repo.save.side_effect = RuntimeError("db write failed")
 

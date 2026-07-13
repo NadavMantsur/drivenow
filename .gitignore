@@ -19,3 +19,4 @@ htmlcov/
 *.db
 .DS_Store
 plan.md
+docs/

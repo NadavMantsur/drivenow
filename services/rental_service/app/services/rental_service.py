@@ -30,6 +30,9 @@ class RentalService:
     def _refresh_metrics(self) -> None:
         set_ongoing_rentals(self._repository.count_ongoing())
 
+    def list_rentals(self, *, ongoing: bool | None = None) -> list[RentalModel]:
+        return self._repository.list(ongoing=ongoing)
+
     def _compensate_car_status(
         self,
         car_id: int,

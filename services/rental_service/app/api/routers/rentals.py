@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import get_rental_service
 from app.domain.exceptions import ConflictError, DomainError, FleetServiceError, NotFoundError
@@ -23,6 +23,17 @@ def register_rental(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except DomainError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("", response_model=list[RentalRead])
+def list_rentals(
+    ongoing: bool | None = Query(
+        default=None,
+        description="If true, only ongoing rentals. If false, only ended. Omit for all.",
+    ),
+    service: RentalService = Depends(get_rental_service),
+) -> list[RentalRead]:
+    return service.list_rentals(ongoing=ongoing)
 
 
 @router.post("/{rental_id}/end", response_model=RentalRead)

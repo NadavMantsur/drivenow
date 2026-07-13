@@ -5,7 +5,7 @@ DriveNow is a microservices backend for managing a car rental fleet. It provides
 | Service | Responsibility |
 |---------|----------------|
 | **fleet-service** | Cars: create, list/filter, update (including status transitions) |
-| **rental-service** | Rentals: register and end; coordinates car status via fleet over HTTP |
+| **rental-service** | Rentals: register, list/filter, and end; coordinates car status via fleet over HTTP |
 
 ---
 
@@ -103,6 +103,7 @@ Interactive docs (Swagger):
 | `GET` | `/cars/{id}` | fleet |
 | `PATCH` | `/cars/{id}` | fleet (`status`, optional `expected_status` for CAS) |
 | `POST` | `/rentals` | rental |
+| `GET` | `/rentals?ongoing=` | rental (`true` = active only, `false` = ended only) |
 | `POST` | `/rentals/{id}/end` | rental |
 | `GET` | `/health` | both |
 | `GET` | `/metrics` | both (Prometheus) |
@@ -120,10 +121,13 @@ curl -s -X POST http://localhost:8002/rentals \
   -H 'Content-Type: application/json' \
   -d '{"car_id":1,"customer_name":"Alice"}'
 
-# 3) End rental (restores car to available)
+# 3) List ongoing rentals (recover ids for end)
+curl -s 'http://localhost:8002/rentals?ongoing=true'
+
+# 4) End rental (restores car to available)
 curl -s -X POST http://localhost:8002/rentals/1/end
 
-# 4) List available cars
+# 5) List available cars
 curl -s 'http://localhost:8001/cars?status=available'
 ```
 
@@ -168,7 +172,7 @@ export PYTHONPATH="$PWD/shared:$PWD/services/rental_service"
 pytest services/rental_service/tests -q
 ```
 
-Tests cover status transitions, rental flows, compensation, and concurrency/CAS conflicts. They do not require Postgres.
+Tests cover status transitions, rental flows (including list/filter), compensation, and concurrency/CAS conflicts. They do not require Postgres.
 
 ---
 

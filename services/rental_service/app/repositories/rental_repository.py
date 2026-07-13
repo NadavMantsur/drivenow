@@ -27,6 +27,10 @@ class RentalRepository(ABC):
     def has_ongoing_for_car(self, car_id: int) -> bool:
         raise NotImplementedError
 
+    @abstractmethod
+    def list(self, *, ongoing: bool | None = None) -> list[RentalModel]:
+        raise NotImplementedError
+
 
 class SqlAlchemyRentalRepository(RentalRepository):
     def __init__(self, db: Session) -> None:
@@ -57,3 +61,11 @@ class SqlAlchemyRentalRepository(RentalRepository):
             RentalModel.end_date.is_(None),
         )
         return self._db.scalars(stmt).first() is not None
+
+    def list(self, *, ongoing: bool | None = None) -> list[RentalModel]:
+        stmt = select(RentalModel).order_by(RentalModel.id)
+        if ongoing is True:
+            stmt = stmt.where(RentalModel.end_date.is_(None))
+        elif ongoing is False:
+            stmt = stmt.where(RentalModel.end_date.is_not(None))
+        return list(self._db.scalars(stmt).all())
