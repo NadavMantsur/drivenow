@@ -4,7 +4,7 @@ from drivenow_shared.events import DomainEvent
 
 
 class EventPublisher(ABC):
-    """Port for publishing domain events (no-op by default; swap in a broker adapter)."""
+    """Port for publishing domain events (no-op by default; optional MQ EXTRA adapter later)."""
 
     @abstractmethod
     def publish(self, event: DomainEvent) -> None:

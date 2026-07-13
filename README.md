@@ -1,6 +1,6 @@
 # DriveNow — Vehicle Management System
 
-DriveNow is a microservices backend for managing a car rental fleet. It provides REST APIs for cars and rentals, persists data in PostgreSQL, and ships with Docker Compose, CI, and Kubernetes manifests.
+DriveNow is a microservices backend for managing a car rental fleet. It provides REST APIs for cars and rentals, persists data in PostgreSQL, and runs locally with Docker Compose.
 
 | Service | Responsibility |
 |---------|----------------|
@@ -28,11 +28,11 @@ flowchart LR
   Rental --> Prom
 ```
 
-Services emit domain events through an `EventPublisher` interface. The current deployment uses a no-op publisher; a message broker (for example RabbitMQ) and an audit store (for example MongoDB) can be added without rewriting core business logic.
+Services depend on an `EventPublisher` interface for domain events. The current stack uses a no-op publisher so a message-queue adapter can be plugged in later (assignment EXTRA) without rewriting business logic.
 
 ### Why PostgreSQL
 
-Cars and rentals are transactional, relational data (status rules, at most one ongoing rental per car). PostgreSQL with SQLAlchemy fits that model and runs cleanly in Compose and Kubernetes.
+Cars and rentals are transactional, relational data (status rules, at most one ongoing rental per car). PostgreSQL with SQLAlchemy fits that model and runs cleanly in Docker Compose.
 
 ### Repository layout
 
@@ -43,8 +43,6 @@ drivenow/
     rental_service/         # rentals API + fleet HTTP client
   shared/drivenow_shared/   # shared enums + DomainEvent contract
   deploy/postgres/          # Compose DB init
-  k8s/                      # Kubernetes manifests
-  .github/workflows/        # CI
   docker-compose.yml
 ```
 
@@ -176,55 +174,7 @@ Tests cover status transitions, rental flows (including list/filter), compensati
 
 ---
 
-## CI/CD
-
-Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-
-On push or pull request the pipeline:
-
-1. Installs dependencies and runs the fleet and rental test suites  
-2. Builds Docker images for both services  
-
----
-
-## Kubernetes
-
-Manifests under [`k8s/`](k8s/) deploy postgres, fleet, and rental into the `drivenow` namespace.
-
-```bash
-# Build images for a local cluster (kind / minikube)
-docker build -f services/fleet_service/Dockerfile -t drivenow/fleet:latest .
-docker build -f services/rental_service/Dockerfile -t drivenow/rental:latest .
-# kind load docker-image drivenow/fleet:latest
-# kind load docker-image drivenow/rental:latest
-
-kubectl apply -k k8s/
-kubectl -n drivenow get pods,svc
-```
-
-| Service | NodePort (typical) |
-|---------|---------------------|
-| Fleet | http://localhost:30001/docs |
-| Rental | http://localhost:30002/docs |
-
-Or use port-forward:
-
-```bash
-kubectl -n drivenow port-forward svc/fleet 8001:8000
-kubectl -n drivenow port-forward svc/rental 8002:8000
-```
-
-Database credentials in `k8s/postgres/secret.yaml` are local defaults — replace them before deploying to a shared cluster.
-
----
-
 ## Logging and metrics
 
 - **Logging:** Python `logging` to console and a rotating file under `LOG_DIR`
 - **Metrics:** Prometheus gauges and histograms on `/metrics` (available cars, ongoing rentals, request latency and count)
-
----
-
-## Extensibility
-
-The `EventPublisher` seam is the extension point for async integration. A typical next step is publishing domain events to a broker and persisting an immutable audit trail in a document store, while keeping the fleet and rental service boundaries unchanged.
