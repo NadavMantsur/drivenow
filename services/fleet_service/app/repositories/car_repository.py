@@ -30,6 +30,10 @@ class CarRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete(self, car: CarModel) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def transition_status(
         self,
         car_id: int,
@@ -72,6 +76,10 @@ class SqlAlchemyCarRepository(CarRepository):
         self._db.commit()
         self._db.refresh(car)
         return car
+
+    def delete(self, car: CarModel) -> None:
+        self._db.delete(car)
+        self._db.commit()
 
     def transition_status(
         self,

@@ -16,3 +16,8 @@ class RentalRead(BaseModel):
     customer_name: str
     start_date: datetime
     end_date: datetime | None
+
+
+class RentalActionResponse(BaseModel):
+    message: str
+    rental: RentalRead

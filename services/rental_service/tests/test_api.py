@@ -77,7 +77,9 @@ def test_register_rental_api(client):
     test_client, _ = client
     response = test_client.post("/rentals", json={"car_id": 1, "customer_name": "Bob"})
     assert response.status_code == 201
-    assert response.json()["customer_name"] == "Bob"
+    body = response.json()
+    assert body["message"] == "Rental 1 was registered successfully for car 1."
+    assert body["rental"]["customer_name"] == "Bob"
 
 
 def test_list_rentals_api(client):

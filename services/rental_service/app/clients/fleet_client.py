@@ -54,7 +54,7 @@ class HttpFleetClient(FleetClient):
 
         try:
             response = httpx.patch(
-                f"{self._base_url}/cars/{car_id}",
+                f"{self._base_url}/cars/{car_id}/status",
                 json=body,
                 timeout=self._timeout,
             )
@@ -67,4 +67,6 @@ class HttpFleetClient(FleetClient):
             raise ConflictError(f"Fleet status conflict for car {car_id}: {response.text}")
         if response.status_code >= 400:
             raise FleetServiceError(f"Fleet service error: {response.text}")
-        return response.json()
+        data = response.json()
+        # Fleet mutation endpoints return {message, car}; keep a flat car dict for callers.
+        return data["car"] if isinstance(data, dict) and "car" in data else data

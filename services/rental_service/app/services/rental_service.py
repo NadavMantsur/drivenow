@@ -101,7 +101,7 @@ class RentalService:
             raise
 
         logger.info(
-            "Rental registered id=%s car_id=%s customer=%s",
+            "Rental %s was registered successfully for car %s (customer=%s).",
             created.id,
             created.car_id,
             created.customer_name,
@@ -148,10 +148,9 @@ class RentalService:
             raise
 
         logger.info(
-            "Rental ended id=%s car_id=%s end_date=%s",
+            "Rental %s was ended successfully; car %s is available again.",
             updated.id,
             updated.car_id,
-            updated.end_date.isoformat(),
         )
         self._events.publish(
             DomainEvent(

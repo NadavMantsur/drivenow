@@ -8,12 +8,33 @@ class CarCreate(BaseModel):
     year: int = Field(ge=1900, le=2100)
 
 
-class CarUpdate(BaseModel):
+class CarDetailsUpdate(BaseModel):
+    """Update model and/or year only (not status)."""
+
     model: str | None = Field(default=None, min_length=1, max_length=120)
     year: int | None = Field(default=None, ge=1900, le=2100)
-    status: CarStatus | None = None
-    # When set with status, fleet applies an atomic compare-and-set (concurrency-safe).
-    expected_status: CarStatus | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"model": "Corolla Hybrid", "year": 2025},
+        }
+    )
+
+
+class CarStatusUpdate(BaseModel):
+    """Update car status. Optional expected_status enables compare-and-set (used by rental)."""
+
+    status: CarStatus
+    expected_status: CarStatus | None = Field(
+        default=None,
+        description="Optional CAS: only apply if the car currently has this status.",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"status": "under_maintenance"},
+        }
+    )
 
 
 class CarRead(BaseModel):
@@ -23,3 +44,12 @@ class CarRead(BaseModel):
     model: str
     year: int
     status: CarStatus
+
+
+class CarActionResponse(BaseModel):
+    message: str
+    car: CarRead
+
+
+class MessageResponse(BaseModel):
+    message: str

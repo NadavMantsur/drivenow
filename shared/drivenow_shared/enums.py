@@ -13,5 +13,6 @@ class DomainEventType(str, Enum):
     CAR_CREATED = "car.created"
     CAR_UPDATED = "car.updated"
     CAR_STATUS_CHANGED = "car.status_changed"
+    CAR_DELETED = "car.deleted"
     RENTAL_CREATED = "rental.created"
     RENTAL_ENDED = "rental.ended"

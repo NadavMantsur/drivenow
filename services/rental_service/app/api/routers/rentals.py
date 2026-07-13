@@ -2,19 +2,26 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import get_rental_service
 from app.domain.exceptions import ConflictError, DomainError, FleetServiceError, NotFoundError
-from app.schemas.rental import RentalCreate, RentalRead
+from app.schemas.rental import RentalActionResponse, RentalCreate, RentalRead
 from app.services.rental_service import RentalService
 
 router = APIRouter(prefix="/rentals", tags=["rentals"])
 
 
-@router.post("", response_model=RentalRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=RentalActionResponse, status_code=status.HTTP_201_CREATED)
 def register_rental(
     payload: RentalCreate,
     service: RentalService = Depends(get_rental_service),
-) -> RentalRead:
+) -> RentalActionResponse:
     try:
-        return service.register_rental(payload)
+        rental = service.register_rental(payload)
+        return RentalActionResponse(
+            message=(
+                f"Rental {rental.id} was registered successfully "
+                f"for car {rental.car_id}."
+            ),
+            rental=rental,
+        )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ConflictError as exc:
@@ -36,13 +43,20 @@ def list_rentals(
     return service.list_rentals(ongoing=ongoing)
 
 
-@router.post("/{rental_id}/end", response_model=RentalRead)
+@router.post("/{rental_id}/end", response_model=RentalActionResponse)
 def end_rental(
     rental_id: int,
     service: RentalService = Depends(get_rental_service),
-) -> RentalRead:
+) -> RentalActionResponse:
     try:
-        return service.end_rental(rental_id)
+        rental = service.end_rental(rental_id)
+        return RentalActionResponse(
+            message=(
+                f"Rental {rental.id} was ended successfully "
+                f"and car {rental.car_id} is available again."
+            ),
+            rental=rental,
+        )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ConflictError as exc:

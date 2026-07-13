@@ -19,10 +19,18 @@ AVAILABLE_CARS = Gauge(
     "drivenow_cars_available",
     "Number of cars with available status",
 )
+ACTIVE_CARS = Gauge(
+    "drivenow_cars_active",
+    "Number of active cars (status in_use)",
+)
 
 
 def set_available_cars(count: int) -> None:
     AVAILABLE_CARS.set(count)
+
+
+def set_active_cars(count: int) -> None:
+    ACTIVE_CARS.set(count)
 
 
 def metrics_response() -> StarletteResponse:

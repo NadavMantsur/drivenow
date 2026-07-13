@@ -4,7 +4,7 @@ DriveNow is a microservices backend for managing a car rental fleet. It provides
 
 | Service | Responsibility |
 |---------|----------------|
-| **fleet-service** | Cars: create, list/filter, update (including status transitions) |
+| **fleet-service** | Cars: create, list/filter, update, delete (including status transitions) |
 | **rental-service** | Rentals: register, list/filter, and end; coordinates car status via fleet over HTTP |
 
 ---
@@ -99,7 +99,9 @@ Interactive docs (Swagger):
 | `POST` | `/cars` | fleet |
 | `GET` | `/cars?status=` | fleet |
 | `GET` | `/cars/{id}` | fleet |
-| `PATCH` | `/cars/{id}` | fleet (`status`, optional `expected_status` for CAS) |
+| `PATCH` | `/cars/{id}` | fleet — update **details** (model/year) |
+| `PATCH` | `/cars/{id}/status` | fleet — update **status** (optional `expected_status` for CAS) |
+| `DELETE` | `/cars/{id}` | fleet (200 + message; 409 if car is `in_use`) |
 | `POST` | `/rentals` | rental |
 | `GET` | `/rentals?ongoing=` | rental (`true` = active only, `false` = ended only) |
 | `POST` | `/rentals/{id}/end` | rental |
@@ -127,7 +129,22 @@ curl -s -X POST http://localhost:8002/rentals/1/end
 
 # 5) List available cars
 curl -s 'http://localhost:8001/cars?status=available'
+
+# 5b) Set a car under maintenance
+curl -s -X PATCH http://localhost:8001/cars/1/status \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"under_maintenance"}'
+
+# 5c) Update car details (model/year)
+curl -s -X PATCH http://localhost:8001/cars/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Corolla Hybrid","year":2025}'
+
+# 6) Delete a car (only when not in_use)
+curl -s -X DELETE http://localhost:8001/cars/1
 ```
+
+Mutation responses include a human-readable `message` plus the entity (`car` / `rental`). Delete returns `{"message": "Car 1 was deleted successfully."}`.
 
 ---
 
@@ -177,4 +194,4 @@ Tests cover status transitions, rental flows (including list/filter), compensati
 ## Logging and metrics
 
 - **Logging:** Python `logging` to console and a rotating file under `LOG_DIR`
-- **Metrics:** Prometheus gauges and histograms on `/metrics` (available cars, ongoing rentals, request latency and count)
+- **Metrics:** Prometheus gauges and histograms on `/metrics` (available cars, active/`in_use` cars, ongoing rentals, request latency and count)
