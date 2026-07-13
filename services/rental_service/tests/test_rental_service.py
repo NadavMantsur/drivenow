@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from drivenow_shared.enums import CarStatus
 
 from app.domain.events import NoOpEventPublisher
-from app.domain.exceptions import ConflictError, FleetServiceError
+from app.domain.exceptions import ConflictError, FleetServiceError, NotFoundError
 from app.repositories.models import RentalModel
 from app.schemas.rental import RentalCreate
 from app.services.rental_service import RentalService
@@ -111,6 +111,24 @@ def test_end_rental_restores_available():
     fleet.update_car_status.assert_called_once_with(
         1, CarStatus.AVAILABLE, expected_status=CarStatus.IN_USE
     )
+
+
+def test_end_rental_closes_when_car_already_deleted_from_fleet():
+    """Orphan rental: fleet car is gone — still set end_date."""
+    repo = MagicMock()
+    rental = _rental(6, car_id=2)
+    repo.get_by_id.return_value = rental
+    repo.save.side_effect = lambda r: r
+    repo.count_ongoing.return_value = 0
+
+    fleet = MagicMock()
+    fleet.update_car_status.side_effect = NotFoundError("Car 2 not found in fleet service")
+
+    service = RentalService(repo, fleet, NoOpEventPublisher())
+    result = service.end_rental(6)
+
+    assert result.end_date is not None
+    repo.save.assert_called_once()
 
 
 def test_register_compensates_when_insert_fails():

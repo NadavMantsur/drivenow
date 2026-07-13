@@ -3,9 +3,11 @@ from drivenow_shared.enums import CarStatus
 from app.domain.exceptions import InvalidStatusTransitionError
 
 # Explicit allowed transitions (Strategy for status changes).
+# in_use → available is for rental release only (CAS with expected_status);
+# direct non-CAS updates from in_use are rejected in CarService.
 ALLOWED_TRANSITIONS: dict[CarStatus, set[CarStatus]] = {
     CarStatus.AVAILABLE: {CarStatus.IN_USE, CarStatus.UNDER_MAINTENANCE},
-    CarStatus.IN_USE: {CarStatus.AVAILABLE, CarStatus.UNDER_MAINTENANCE},
+    CarStatus.IN_USE: {CarStatus.AVAILABLE},
     CarStatus.UNDER_MAINTENANCE: {CarStatus.AVAILABLE},
 }
 

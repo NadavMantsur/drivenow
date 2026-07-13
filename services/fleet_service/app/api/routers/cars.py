@@ -97,6 +97,8 @@ def update_car_details(
     summary="Update car status",
     description=(
         "Change status (available / in_use / under_maintenance). "
+        "While in_use, direct updates are rejected — end the rental (CAS "
+        "in_use→available with expected_status) to release the car. "
         "Optional expected_status enables compare-and-set for concurrent updates."
     ),
 )

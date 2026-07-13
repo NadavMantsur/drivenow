@@ -32,7 +32,7 @@ class CarService:
         self._status_strategy = status_strategy
         self._events = event_publisher
 
-    def _refresh_metrics(self) -> None:
+    def refresh_metrics(self) -> None:
         set_available_cars(self._repository.count_by_status(CarStatus.AVAILABLE))
         set_active_cars(self._repository.count_by_status(CarStatus.IN_USE))
 
@@ -61,7 +61,7 @@ class CarService:
                 },
             )
         )
-        self._refresh_metrics()
+        self.refresh_metrics()
         return created
 
     def list_cars(self, status: CarStatus | None = None) -> list[CarModel]:
@@ -101,7 +101,7 @@ class CarService:
                 },
             )
         )
-        self._refresh_metrics()
+        self.refresh_metrics()
 
     def update_car_details(self, car_id: int, payload: CarDetailsUpdate) -> CarModel:
         if payload.model is None and payload.year is None:
@@ -119,7 +119,7 @@ class CarService:
 
         updated = self._repository.save(car)
         self._publish_update_events(previous_status, updated)
-        self._refresh_metrics()
+        self.refresh_metrics()
         return updated
 
     def update_car_status(self, car_id: int, payload: CarStatusUpdate) -> StatusUpdateResult:
@@ -142,13 +142,20 @@ class CarService:
             )
             return StatusUpdateResult(car=car, changed=False)
 
+        # Rental owns in_use: only CAS (end rental) may leave this status.
+        if car.status == CarStatus.IN_USE:
+            raise ConflictError(
+                f"Car {car_id} is in use — end the rental to release it; "
+                "direct status updates from in_use are not allowed"
+            )
+
         previous_status = car.status
         self._status_strategy.validate(car.status, payload.status)
         car.status = payload.status
 
         updated = self._repository.save(car)
         self._publish_update_events(previous_status, updated)
-        self._refresh_metrics()
+        self.refresh_metrics()
         return StatusUpdateResult(car=updated, changed=True)
 
     def _compare_and_set_status(
@@ -190,7 +197,7 @@ class CarService:
             new_status.value,
         )
         self._publish_update_events(expected_status, updated)
-        self._refresh_metrics()
+        self.refresh_metrics()
         return StatusUpdateResult(car=updated, changed=True)
 
     def _publish_update_events(

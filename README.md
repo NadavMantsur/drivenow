@@ -61,6 +61,7 @@ drivenow/
 Cross-service consistency:
 
 - Rental uses **compare-and-set** on fleet status (`expected_status`) so only one register can claim an `available` car
+- While a car is `in_use`, fleet rejects direct status changes — only rental end (CAS `in_use`→`available`) may release it
 - Partial unique index: one ongoing rental per `car_id`
 - Compensation when a later step fails after a fleet or database write
 
@@ -130,7 +131,7 @@ curl -s -X POST http://localhost:8002/rentals/1/end
 # 5) List available cars
 curl -s 'http://localhost:8001/cars?status=available'
 
-# 5b) Set a car under maintenance
+# 5b) Set a car under maintenance (only when not in_use — end rental first)
 curl -s -X PATCH http://localhost:8001/cars/1/status \
   -H 'Content-Type: application/json' \
   -d '{"status":"under_maintenance"}'

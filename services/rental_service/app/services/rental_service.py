@@ -27,7 +27,7 @@ class RentalService:
         self._fleet = fleet_client
         self._events = event_publisher
 
-    def _refresh_metrics(self) -> None:
+    def refresh_metrics(self) -> None:
         set_ongoing_rentals(self._repository.count_ongoing())
 
     def list_rentals(self, *, ongoing: bool | None = None) -> list[RentalModel]:
@@ -118,7 +118,7 @@ class RentalService:
                 },
             )
         )
-        self._refresh_metrics()
+        self.refresh_metrics()
         return created
 
     def end_rental(self, rental_id: int) -> RentalModel:
@@ -129,11 +129,19 @@ class RentalService:
             raise ConflictError(f"Rental {rental_id} is already ended")
 
         # Release fleet first (CAS), then commit end_date — avoids "ended but still in_use".
-        self._fleet.update_car_status(
-            rental.car_id,
-            CarStatus.AVAILABLE,
-            expected_status=CarStatus.IN_USE,
-        )
+        # If the car was already deleted from fleet, still close the orphan rental.
+        try:
+            self._fleet.update_car_status(
+                rental.car_id,
+                CarStatus.AVAILABLE,
+                expected_status=CarStatus.IN_USE,
+            )
+        except NotFoundError:
+            logger.warning(
+                "Car %s not found in fleet while ending rental %s — closing rental anyway",
+                rental.car_id,
+                rental_id,
+            )
 
         rental.end_date = datetime.now(timezone.utc)
         try:
@@ -163,5 +171,5 @@ class RentalService:
                 },
             )
         )
-        self._refresh_metrics()
+        self.refresh_metrics()
         return updated

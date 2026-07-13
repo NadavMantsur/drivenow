@@ -137,6 +137,60 @@ def test_compare_and_set_status_conflict():
         )
 
 
+def test_update_car_status_rejects_direct_change_while_in_use():
+    """Rental owns in_use — non-CAS PATCH must not release or divert the car."""
+    repo = MagicMock()
+    repo.get_by_id_for_update.return_value = CarModel(
+        id=1, model="Corolla", year=2024, status=CarStatus.IN_USE
+    )
+    service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
+
+    with pytest.raises(ConflictError, match="end the rental"):
+        service.update_car_status(1, CarStatusUpdate(status=CarStatus.AVAILABLE))
+    with pytest.raises(ConflictError, match="end the rental"):
+        service.update_car_status(
+            1, CarStatusUpdate(status=CarStatus.UNDER_MAINTENANCE)
+        )
+    repo.save.assert_not_called()
+
+
+def test_compare_and_set_releases_in_use_to_available():
+    """Rental end path: CAS in_use → available is allowed."""
+    repo = MagicMock()
+    updated = CarModel(id=1, model="Corolla", year=2024, status=CarStatus.AVAILABLE)
+    repo.transition_status.return_value = updated
+    repo.count_by_status.return_value = 1
+
+    service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
+    result = service.update_car_status(
+        1,
+        CarStatusUpdate(
+            status=CarStatus.AVAILABLE, expected_status=CarStatus.IN_USE
+        ),
+    )
+
+    assert result.changed is True
+    assert result.car.status == CarStatus.AVAILABLE
+    repo.transition_status.assert_called_once_with(
+        1, CarStatus.IN_USE, CarStatus.AVAILABLE
+    )
+
+
+def test_compare_and_set_rejects_in_use_to_maintenance():
+    repo = MagicMock()
+    service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
+
+    with pytest.raises(InvalidStatusTransitionError, match="Cannot transition"):
+        service.update_car_status(
+            1,
+            CarStatusUpdate(
+                status=CarStatus.UNDER_MAINTENANCE,
+                expected_status=CarStatus.IN_USE,
+            ),
+        )
+    repo.transition_status.assert_not_called()
+
+
 def test_update_car_details():
     repo = MagicMock()
     car = CarModel(id=1, model="Corolla", year=2024, status=CarStatus.AVAILABLE)

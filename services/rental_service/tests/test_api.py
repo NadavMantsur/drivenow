@@ -17,7 +17,11 @@ from app.services.rental_service import RentalService
 
 @pytest.fixture
 def client():
-    with patch("app.main.init_db"), patch("app.main.setup_logging"):
+    with (
+        patch("app.main.init_db"),
+        patch("app.main.setup_logging"),
+        patch("app.main.seed_metrics"),
+    ):
         from app.main import create_app
 
         app = create_app()
@@ -39,6 +43,8 @@ def client():
         )
         repo.has_ongoing_for_car.return_value = False
         repo.add.return_value = rental
+        repo.get_by_id.return_value = rental
+        repo.save.side_effect = lambda r: r
         repo.count_ongoing.return_value = 1
         repo.list.return_value = [rental, ended]
         fleet.get_car.return_value = {"id": 1, "status": "available"}
@@ -47,7 +53,7 @@ def client():
         service = RentalService(repo, fleet, NoOpEventPublisher())
         app.dependency_overrides[get_rental_service] = lambda: service
         with TestClient(app) as test_client:
-            yield test_client, repo
+            yield test_client, repo, fleet
         app.dependency_overrides.clear()
 
 
@@ -67,14 +73,21 @@ def rental_repo() -> SqlAlchemyRentalRepository:
 
 
 def test_health(client):
-    test_client, _ = client
+    test_client, _, _ = client
     response = test_client.get("/health")
     assert response.status_code == 200
     assert response.json()["service"] == "rental-service"
 
 
+def test_metrics_api(client):
+    test_client, _, _ = client
+    response = test_client.get("/metrics")
+    assert response.status_code == 200
+    assert "drivenow_rentals_ongoing" in response.text
+
+
 def test_register_rental_api(client):
-    test_client, _ = client
+    test_client, _, _ = client
     response = test_client.post("/rentals", json={"car_id": 1, "customer_name": "Bob"})
     assert response.status_code == 201
     body = response.json()
@@ -82,8 +95,21 @@ def test_register_rental_api(client):
     assert body["rental"]["customer_name"] == "Bob"
 
 
+def test_end_rental_api(client):
+    test_client, repo, fleet = client
+    fleet.update_car_status.return_value = {"id": 1, "status": "available"}
+    response = test_client.post("/rentals/1/end")
+    assert response.status_code == 200
+    body = response.json()
+    assert "ended successfully" in body["message"]
+    assert body["rental"]["id"] == 1
+    assert body["rental"]["end_date"] is not None
+    fleet.update_car_status.assert_called()
+    repo.save.assert_called()
+
+
 def test_list_rentals_api(client):
-    test_client, repo = client
+    test_client, repo, _ = client
     response = test_client.get("/rentals")
     assert response.status_code == 200
     body = response.json()
@@ -93,7 +119,7 @@ def test_list_rentals_api(client):
 
 
 def test_list_ongoing_rentals_api(client):
-    test_client, repo = client
+    test_client, repo, _ = client
     ongoing = RentalModel(
         id=1,
         car_id=1,
@@ -110,7 +136,7 @@ def test_list_ongoing_rentals_api(client):
 
 
 def test_list_ended_rentals_api(client):
-    test_client, repo = client
+    test_client, repo, _ = client
     ended = RentalModel(
         id=2,
         car_id=2,

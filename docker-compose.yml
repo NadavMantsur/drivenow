@@ -31,6 +31,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Rental waits on this so it does not start before fleet accepts HTTP.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   rental:
     build:
@@ -49,7 +62,7 @@ services:
       postgres:
         condition: service_healthy
       fleet:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   postgres_data:

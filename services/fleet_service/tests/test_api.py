@@ -14,7 +14,11 @@ from app.services.car_service import CarService
 
 @pytest.fixture
 def client():
-    with patch("app.main.init_db"), patch("app.main.setup_logging"):
+    with (
+        patch("app.main.init_db"),
+        patch("app.main.setup_logging"),
+        patch("app.main.seed_metrics"),
+    ):
         from app.main import create_app
 
         app = create_app()
@@ -23,23 +27,36 @@ def client():
         repo.add.return_value = car
         repo.list.return_value = [car]
         repo.get_by_id.return_value = car
+        repo.get_by_id_for_update.return_value = car
+        repo.save.side_effect = lambda c: c
         repo.count_by_status.return_value = 1
         service = CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
 
         app.dependency_overrides[get_car_service] = lambda: service
         with TestClient(app) as test_client:
-            yield test_client
+            yield test_client, repo
         app.dependency_overrides.clear()
 
 
 def test_health(client):
-    response = client.get("/health")
+    test_client, _ = client
+    response = test_client.get("/health")
     assert response.status_code == 200
     assert response.json()["service"] == "fleet-service"
 
 
+def test_metrics_api(client):
+    test_client, _ = client
+    response = test_client.get("/metrics")
+    assert response.status_code == 200
+    body = response.text
+    assert "drivenow_cars_available" in body
+    assert "drivenow_cars_active" in body
+
+
 def test_add_car_api(client):
-    response = client.post("/cars", json={"model": "Civic", "year": 2022})
+    test_client, _ = client
+    response = test_client.post("/cars", json={"model": "Civic", "year": 2022})
     assert response.status_code == 201
     body = response.json()
     assert body["message"] == "Car 1 was added successfully."
@@ -47,14 +64,52 @@ def test_add_car_api(client):
     assert body["car"]["status"] == "available"
 
 
+def test_list_cars_status_filter_api(client):
+    test_client, repo = client
+    response = test_client.get("/cars?status=available")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["status"] == "available"
+    repo.list.assert_called_with(status=CarStatus.AVAILABLE)
+
+
+def test_update_car_details_api(client):
+    test_client, _ = client
+    response = test_client.patch(
+        "/cars/1", json={"model": "Civic Hybrid", "year": 2023}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "Car 1 details were updated successfully."
+    assert body["car"]["model"] == "Civic Hybrid"
+    assert body["car"]["year"] == 2023
+    assert body["car"]["status"] == "available"
+
+
+def test_update_car_status_api(client):
+    test_client, _ = client
+    response = test_client.patch(
+        "/cars/1/status", json={"status": "under_maintenance"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "under_maintenance" in body["message"]
+    assert body["car"]["status"] == "under_maintenance"
+
+
 def test_delete_car_api(client):
-    response = client.delete("/cars/1")
+    test_client, _ = client
+    response = test_client.delete("/cars/1")
     assert response.status_code == 200
     assert response.json()["message"] == "Car 1 was deleted successfully."
 
 
 def test_delete_car_in_use_conflict_api():
-    with patch("app.main.init_db"), patch("app.main.setup_logging"):
+    with (
+        patch("app.main.init_db"),
+        patch("app.main.setup_logging"),
+        patch("app.main.seed_metrics"),
+    ):
         from app.main import create_app
 
         app = create_app()
