@@ -18,10 +18,12 @@ def seed_metrics() -> None:
     # Same refresh path as write handlers.
     db = SessionLocal()
     try:
+        settings = get_settings()
         CarService(
             SqlAlchemyCarRepository(db),
             CarStatusStrategy(),
             NoOpEventPublisher(),
+            internal_service_token=settings.internal_service_token,
         ).refresh_metrics()
     finally:
         db.close()

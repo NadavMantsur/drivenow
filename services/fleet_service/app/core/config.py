@@ -8,6 +8,8 @@ class Settings(BaseSettings):
 
     app_name: str = "fleet-service"
     database_url: str = "postgresql+psycopg2://drivenow:drivenow@localhost:5432/fleet_db"
+    # Shared with rental-service; required for any status transition involving in_use.
+    internal_service_token: str = "drivenow-dev-internal"
     log_level: str = "INFO"
     log_dir: str = "logs"
 

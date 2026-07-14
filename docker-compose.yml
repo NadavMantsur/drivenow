@@ -25,6 +25,7 @@ services:
       LOG_DIR: /app/logs
       LOG_LEVEL: INFO
       TZ: Asia/Jerusalem
+      INTERNAL_SERVICE_TOKEN: drivenow-dev-internal
     ports:
       - "8001:8000"
     volumes:
@@ -56,6 +57,7 @@ services:
       LOG_DIR: /app/logs
       LOG_LEVEL: INFO
       TZ: Asia/Jerusalem
+      INTERNAL_SERVICE_TOKEN: drivenow-dev-internal
     ports:
       - "8002:8000"
     volumes:

@@ -3,6 +3,7 @@ from collections.abc import Generator
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.domain.events import EventPublisher, NoOpEventPublisher
 from app.domain.status_strategy import CarStatusStrategy
@@ -27,4 +28,9 @@ def get_car_service(
     status_strategy: CarStatusStrategy = Depends(get_status_strategy),
     event_publisher: EventPublisher = Depends(get_event_publisher),
 ) -> CarService:
-    return CarService(repository, status_strategy, event_publisher)
+    return CarService(
+        repository,
+        status_strategy,
+        event_publisher,
+        internal_service_token=get_settings().internal_service_token,
+    )

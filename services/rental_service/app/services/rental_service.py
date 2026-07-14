@@ -15,6 +15,8 @@ from app.schemas.rental import RentalCreate
 
 logger = logging.getLogger(__name__)
 
+_COMPENSATION_ATTEMPTS = 3
+
 
 class RentalService:
     def __init__(
@@ -40,27 +42,115 @@ class RentalService:
         *,
         expected_status: CarStatus,
         reason: str,
-    ) -> None:
+        attempts: int = _COMPENSATION_ATTEMPTS,
+    ) -> bool:
+        """Best-effort CAS reverse. Returns True if compensation applied."""
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                self._fleet.update_car_status(
+                    car_id, status, expected_status=expected_status
+                )
+                logger.warning(
+                    "Compensated car_id=%s to %s (%s, attempt %s/%s)",
+                    car_id,
+                    status.value,
+                    reason,
+                    attempt,
+                    attempts,
+                )
+                return True
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Compensation attempt %s/%s failed for car_id=%s after %s: %s",
+                    attempt,
+                    attempts,
+                    car_id,
+                    reason,
+                    exc,
+                )
+        logger.error(
+            "Compensation exhausted for car_id=%s after %s — heal paths may recover; last error=%s",
+            car_id,
+            reason,
+            last_error,
+        )
+        return False
+
+    def _heal_orphan_in_use(self, car_id: int, status: CarStatus) -> CarStatus:
+        """Release in_use with no ongoing rental (timeout / failed compensation leftover)."""
+        if status != CarStatus.IN_USE:
+            return status
+        if self._repository.has_ongoing_for_car(car_id):
+            return status
+
+        logger.warning(
+            "Healing orphan in_use on car_id=%s (no ongoing rental) before register",
+            car_id,
+        )
         try:
             self._fleet.update_car_status(
-                car_id, status, expected_status=expected_status
-            )
-            logger.warning(
-                "Compensated car_id=%s to %s (%s)", car_id, status.value, reason
-            )
-        except Exception:
-            logger.exception(
-                "Compensation failed for car_id=%s after %s — manual reconcile may be needed",
                 car_id,
-                reason,
+                CarStatus.AVAILABLE,
+                expected_status=CarStatus.IN_USE,
             )
+            return CarStatus.AVAILABLE
+        except ConflictError:
+            car = self._fleet.get_car(car_id)
+            return CarStatus(car["status"])
+
+    def _release_car_for_end(self, car_id: int, rental_id: int) -> None:
+        """CAS in_use→available, or heal when fleet is already released / car deleted."""
+        try:
+            self._fleet.update_car_status(
+                car_id,
+                CarStatus.AVAILABLE,
+                expected_status=CarStatus.IN_USE,
+            )
+            return
+        except NotFoundError:
+            logger.warning(
+                "Car %s not found in fleet while ending rental %s — closing rental anyway",
+                car_id,
+                rental_id,
+            )
+            return
+        except ConflictError:
+            pass
+
+        try:
+            car = self._fleet.get_car(car_id)
+        except NotFoundError:
+            logger.warning(
+                "Car %s not found in fleet while ending rental %s — closing rental anyway",
+                car_id,
+                rental_id,
+            )
+            return
+
+        status = CarStatus(car["status"])
+        if status in (CarStatus.AVAILABLE, CarStatus.UNDER_MAINTENANCE):
+            logger.warning(
+                "Car %s is '%s' while ending rental %s — closing rental to heal desync",
+                car_id,
+                status.value,
+                rental_id,
+            )
+            return
+
+        raise ConflictError(
+            f"Cannot end rental {rental_id}: car {car_id} status is '{status.value}'"
+        )
 
     def register_rental(self, payload: RentalCreate) -> RentalModel:
         if self._repository.has_ongoing_for_car(payload.car_id):
             raise ConflictError(f"Car {payload.car_id} already has an ongoing rental")
 
         car = self._fleet.get_car(payload.car_id)
-        car_status = CarStatus(car["status"])
+        car_status = self._heal_orphan_in_use(
+            payload.car_id, CarStatus(car["status"])
+        )
         if car_status != CarStatus.AVAILABLE:
             raise ConflictError(
                 f"Car {payload.car_id} is not available (status={car_status.value})"
@@ -82,12 +172,21 @@ class RentalService:
         try:
             created = self._repository.add(rental)
         except IntegrityError as exc:
-            # Another ongoing rental exists — leave car in_use for that owner.
-            logger.warning(
-                "Concurrent register lost for car_id=%s: %s",
-                payload.car_id,
-                exc,
-            )
+            # Another writer inserted an ongoing rental. Re-check: only leave
+            # in_use if that rental exists; otherwise reverse our claim.
+            if self._repository.has_ongoing_for_car(payload.car_id):
+                logger.warning(
+                    "Concurrent register lost for car_id=%s: %s",
+                    payload.car_id,
+                    exc,
+                )
+            else:
+                self._compensate_car_status(
+                    payload.car_id,
+                    CarStatus.AVAILABLE,
+                    expected_status=CarStatus.IN_USE,
+                    reason="integrity error after CAS but no ongoing rental",
+                )
             raise ConflictError(
                 f"Car {payload.car_id} already has an ongoing rental"
             ) from exc
@@ -129,19 +228,8 @@ class RentalService:
             raise ConflictError(f"Rental {rental_id} is already ended")
 
         # Release fleet first (CAS), then commit end_date — avoids "ended but still in_use".
-        # If the car was already deleted from fleet, still close the orphan rental.
-        try:
-            self._fleet.update_car_status(
-                rental.car_id,
-                CarStatus.AVAILABLE,
-                expected_status=CarStatus.IN_USE,
-            )
-        except NotFoundError:
-            logger.warning(
-                "Car %s not found in fleet while ending rental %s — closing rental anyway",
-                rental.car_id,
-                rental_id,
-            )
+        # Heal when fleet is already available (failed compensation / ambiguous timeout).
+        self._release_car_for_end(rental.car_id, rental_id)
 
         rental.end_date = datetime.now(timezone.utc)
         try:
