@@ -8,8 +8,6 @@ from drivenow_shared.enums import CarStatus
 from app.domain.exceptions import ConflictError, FleetServiceError, NotFoundError
 from app.schemas.fleet import FleetCar
 
-INTERNAL_TOKEN_HEADER = "X-Internal-Token"
-
 
 def _parse_fleet_car(data: object, *, car_id: int) -> FleetCar:
     try:
@@ -41,11 +39,9 @@ class HttpFleetClient(FleetClient):
         self,
         base_url: str,
         *,
-        internal_token: str,
         timeout: float = 5.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._internal_token = internal_token
         self._timeout = timeout
 
     def get_car(self, car_id: int) -> FleetCar:
@@ -71,12 +67,10 @@ class HttpFleetClient(FleetClient):
         if expected_status is not None:
             body["expected_status"] = expected_status.value
 
-        headers = {INTERNAL_TOKEN_HEADER: self._internal_token}
         try:
             response = httpx.patch(
                 f"{self._base_url}/cars/{car_id}/status",
                 json=body,
-                headers=headers,
                 timeout=self._timeout,
             )
         except httpx.HTTPError as exc:
@@ -84,10 +78,6 @@ class HttpFleetClient(FleetClient):
 
         if response.status_code == 404:
             raise NotFoundError(f"Car {car_id} not found in fleet service")
-        if response.status_code == 403:
-            raise FleetServiceError(
-                f"Fleet rejected internal token for car {car_id}: {response.text}"
-            )
         if response.status_code == 409:
             raise ConflictError(f"Fleet status conflict for car {car_id}: {response.text}")
         if response.status_code >= 400:

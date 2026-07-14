@@ -22,11 +22,16 @@ def setup_logging(service_name: str, log_dir: str = "logs", level: str = "INFO")
     console.setFormatter(formatter)
     root.addHandler(console)
 
-    file_handler = RotatingFileHandler(
-        log_path,
-        maxBytes=5_000_000,
-        backupCount=3,
-        encoding="utf-8",
-    )
+    try:
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=5_000_000,
+            backupCount=3,
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        # Bind-mounted host logs may be root-owned; keep console logging.
+        root.warning("File logging disabled for %s: %s", log_path, exc)
+        return
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)

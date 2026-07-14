@@ -11,16 +11,9 @@ from app.domain.status_strategy import CarStatusStrategy
 from app.repositories.models import CarModel
 from app.services.car_service import CarService
 
-INTERNAL_TOKEN = "test-internal-token"
-
 
 def _car_service(repo: MagicMock) -> CarService:
-    return CarService(
-        repo,
-        CarStatusStrategy(),
-        NoOpEventPublisher(),
-        internal_service_token=INTERNAL_TOKEN,
-    )
+    return CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
 
 
 @pytest.fixture
@@ -122,25 +115,13 @@ def test_update_car_status_api(client):
     assert body["car"]["status"] == "under_maintenance"
 
 
-def test_public_cas_claim_in_use_forbidden(client):
-    test_client, repo = client
-    response = test_client.patch(
-        "/cars/1/status",
-        json={"status": "in_use", "expected_status": "available"},
-    )
-    assert response.status_code == 403
-    assert "in_use" in response.json()["detail"]
-    repo.transition_status.assert_not_called()
-
-
-def test_internal_cas_claim_in_use_allowed(client):
+def test_cas_claim_in_use_api(client):
     test_client, repo = client
     updated = CarModel(id=1, model="Civic", year=2022, status=CarStatus.IN_USE)
     repo.transition_status.return_value = updated
     response = test_client.patch(
         "/cars/1/status",
         json={"status": "in_use", "expected_status": "available"},
-        headers={"X-Internal-Token": INTERNAL_TOKEN},
     )
     assert response.status_code == 200
     assert response.json()["car"]["status"] == "in_use"

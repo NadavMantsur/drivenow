@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 
 from drivenow_shared.enums import CarStatus
 
@@ -8,7 +8,6 @@ from app.api.deps import get_car_service
 from app.domain.exceptions import (
     ConflictError,
     DomainError,
-    ForbiddenError,
     InvalidStatusTransitionError,
     NotFoundError,
 )
@@ -101,8 +100,8 @@ def update_car_details(
     summary="Update car status",
     description=(
         "Change status (available / in_use / under_maintenance). "
-        "Transitions that claim or leave in_use require X-Internal-Token "
-        "(rental-service only). Optional expected_status enables compare-and-set."
+        "Optional expected_status enables compare-and-set "
+        "(used by rental-service when claiming or releasing a car)."
     ),
 )
 def update_car_status(
@@ -123,12 +122,9 @@ def update_car_status(
         ),
     ],
     service: CarService = Depends(get_car_service),
-    x_internal_token: Annotated[str | None, Header()] = None,
 ) -> CarActionResponse:
     try:
-        result = service.update_car_status(
-            car_id, payload, caller_token=x_internal_token
-        )
+        result = service.update_car_status(car_id, payload)
         if result.changed:
             message = (
                 f"Car {result.car.id} status was updated successfully "
@@ -144,8 +140,6 @@ def update_car_status(
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except ForbiddenError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except (InvalidStatusTransitionError, ConflictError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except DomainError as exc:

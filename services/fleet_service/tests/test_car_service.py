@@ -7,7 +7,6 @@ from drivenow_shared.enums import CarStatus
 from app.domain.events import NoOpEventPublisher
 from app.domain.exceptions import (
     ConflictError,
-    ForbiddenError,
     InvalidStatusTransitionError,
     NotFoundError,
 )
@@ -16,16 +15,9 @@ from app.repositories.models import CarModel
 from app.schemas.car import CarCreate, CarDetailsUpdate, CarStatusUpdate
 from app.services.car_service import CarService
 
-INTERNAL_TOKEN = "test-internal-token"
-
 
 def _service(repo: MagicMock) -> CarService:
-    return CarService(
-        repo,
-        CarStatusStrategy(),
-        NoOpEventPublisher(),
-        internal_service_token=INTERNAL_TOKEN,
-    )
+    return CarService(repo, CarStatusStrategy(), NoOpEventPublisher())
 
 
 def test_add_car_defaults_to_available():
@@ -85,11 +77,7 @@ def test_update_car_status_rejects_illegal_transition():
     service = _service(repo)
 
     with pytest.raises(InvalidStatusTransitionError, match="Cannot transition"):
-        service.update_car_status(
-            1,
-            CarStatusUpdate(status=CarStatus.IN_USE),
-            caller_token=INTERNAL_TOKEN,
-        )
+        service.update_car_status(1, CarStatusUpdate(status=CarStatus.IN_USE))
 
 
 def test_update_car_status_noop_when_already_same():
@@ -132,7 +120,6 @@ def test_compare_and_set_status_success():
     result = service.update_car_status(
         1,
         CarStatusUpdate(status=CarStatus.IN_USE, expected_status=CarStatus.AVAILABLE),
-        caller_token=INTERNAL_TOKEN,
     )
 
     assert result.changed is True
@@ -155,72 +142,11 @@ def test_compare_and_set_status_conflict():
         service.update_car_status(
             1,
             CarStatusUpdate(status=CarStatus.IN_USE, expected_status=CarStatus.AVAILABLE),
-            caller_token=INTERNAL_TOKEN,
-        )
-
-
-def test_public_cannot_claim_or_release_in_use_via_cas():
-    """Public CAS without token must not bypass rental ownership of in_use."""
-    repo = MagicMock()
-    service = _service(repo)
-
-    with pytest.raises(ForbiddenError, match="in_use"):
-        service.update_car_status(
-            1,
-            CarStatusUpdate(status=CarStatus.IN_USE, expected_status=CarStatus.AVAILABLE),
-        )
-    with pytest.raises(ForbiddenError, match="in_use"):
-        service.update_car_status(
-            1,
-            CarStatusUpdate(
-                status=CarStatus.AVAILABLE, expected_status=CarStatus.IN_USE
-            ),
-        )
-    repo.transition_status.assert_not_called()
-
-
-def test_public_cannot_claim_in_use_without_cas():
-    repo = MagicMock()
-    repo.get_by_id_for_update.return_value = CarModel(
-        id=1, model="Corolla", year=2024, status=CarStatus.AVAILABLE
-    )
-    service = _service(repo)
-
-    with pytest.raises(ForbiddenError, match="in_use"):
-        service.update_car_status(1, CarStatusUpdate(status=CarStatus.IN_USE))
-    repo.save.assert_not_called()
-
-
-def test_update_car_status_rejects_direct_change_while_in_use_without_token():
-    repo = MagicMock()
-    repo.get_by_id_for_update.return_value = CarModel(
-        id=1, model="Corolla", year=2024, status=CarStatus.IN_USE
-    )
-    service = _service(repo)
-
-    with pytest.raises(ForbiddenError, match="in_use"):
-        service.update_car_status(1, CarStatusUpdate(status=CarStatus.AVAILABLE))
-    with pytest.raises(ForbiddenError, match="in_use"):
-        service.update_car_status(
-            1, CarStatusUpdate(status=CarStatus.UNDER_MAINTENANCE)
-        )
-    repo.save.assert_not_called()
-
-
-def test_wrong_internal_token_is_rejected():
-    repo = MagicMock()
-    service = _service(repo)
-
-    with pytest.raises(ForbiddenError, match="in_use"):
-        service.update_car_status(
-            1,
-            CarStatusUpdate(status=CarStatus.IN_USE, expected_status=CarStatus.AVAILABLE),
-            caller_token="wrong-token",
         )
 
 
 def test_compare_and_set_releases_in_use_to_available():
-    """Rental end path: CAS in_use → available with internal token."""
+    """Rental end path: CAS in_use → available."""
     repo = MagicMock()
     updated = CarModel(id=1, model="Corolla", year=2024, status=CarStatus.AVAILABLE)
     repo.transition_status.return_value = updated
@@ -232,7 +158,6 @@ def test_compare_and_set_releases_in_use_to_available():
         CarStatusUpdate(
             status=CarStatus.AVAILABLE, expected_status=CarStatus.IN_USE
         ),
-        caller_token=INTERNAL_TOKEN,
     )
 
     assert result.changed is True
@@ -253,9 +178,22 @@ def test_compare_and_set_rejects_in_use_to_maintenance():
                 status=CarStatus.UNDER_MAINTENANCE,
                 expected_status=CarStatus.IN_USE,
             ),
-            caller_token=INTERNAL_TOKEN,
         )
     repo.transition_status.assert_not_called()
+
+
+def test_update_car_status_rejects_in_use_to_maintenance_without_cas():
+    repo = MagicMock()
+    repo.get_by_id_for_update.return_value = CarModel(
+        id=1, model="Corolla", year=2024, status=CarStatus.IN_USE
+    )
+    service = _service(repo)
+
+    with pytest.raises(InvalidStatusTransitionError, match="Cannot transition"):
+        service.update_car_status(
+            1, CarStatusUpdate(status=CarStatus.UNDER_MAINTENANCE)
+        )
+    repo.save.assert_not_called()
 
 
 def test_maintenance_transitions_remain_public():

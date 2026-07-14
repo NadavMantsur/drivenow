@@ -21,10 +21,7 @@ def seed_metrics() -> None:
     try:
         RentalService(
             SqlAlchemyRentalRepository(db),
-            HttpFleetClient(
-                settings.fleet_service_url,
-                internal_token=settings.internal_service_token,
-            ),
+            HttpFleetClient(settings.fleet_service_url),
             NoOpEventPublisher(),
         ).refresh_metrics()
     finally:

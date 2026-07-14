@@ -61,7 +61,7 @@ drivenow/
 Cross-service consistency:
 
 - Rental uses **compare-and-set** on fleet status (`expected_status`) so only one register can claim an `available` car
-- **Rental owns `in_use`:** any fleet status transition involving `in_use` requires shared `INTERNAL_SERVICE_TOKEN` (`X-Internal-Token`). Public clients can only move between `available` and `under_maintenance`
+- **Rental drives `in_use`:** register/end rental claim and release the car via fleet CAS; maintenance stays on the fleet API (`available` ↔ `under_maintenance`)
 - Partial unique index: one ongoing rental per `car_id`
 - Compensation when a later step fails after a fleet or database write; heal paths recover common desyncs
 
@@ -101,7 +101,7 @@ Interactive docs (Swagger):
 | `GET` | `/cars?status=` | fleet |
 | `GET` | `/cars/{id}` | fleet |
 | `PATCH` | `/cars/{id}` | fleet — update **details** (model/year) |
-| `PATCH` | `/cars/{id}/status` | fleet — status; `in_use` transitions need `X-Internal-Token` |
+| `PATCH` | `/cars/{id}/status` | fleet — status (optional `expected_status` for CAS) |
 | `DELETE` | `/cars/{id}` | fleet (200 + message; 409 if car is `in_use`) |
 | `POST` | `/rentals` | rental |
 | `GET` | `/rentals?ongoing=` | rental (`true` = active only, `false` = ended only) |

@@ -19,10 +19,7 @@ def get_rental_repository(
 
 def get_fleet_client() -> FleetClient:
     settings = get_settings()
-    return HttpFleetClient(
-        settings.fleet_service_url,
-        internal_token=settings.internal_service_token,
-    )
+    return HttpFleetClient(settings.fleet_service_url)
 
 
 def get_event_publisher() -> EventPublisher:

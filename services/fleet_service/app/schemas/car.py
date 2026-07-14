@@ -1,18 +1,45 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from drivenow_shared.enums import CarStatus
+
+# Allow next model year (cars are often sold as N+1).
+_MIN_CAR_YEAR = 1900
+
+
+def _max_car_year() -> int:
+    return date.today().year + 1
 
 
 class CarCreate(BaseModel):
     model: str = Field(min_length=1, max_length=120)
-    year: int = Field(ge=1900, le=2100)
+    year: int = Field(ge=_MIN_CAR_YEAR)
+
+    @field_validator("year")
+    @classmethod
+    def year_within_range(cls, value: int) -> int:
+        max_year = _max_car_year()
+        if value > max_year:
+            raise ValueError(f"year must be <= {max_year}")
+        return value
 
 
 class CarDetailsUpdate(BaseModel):
     """Update model and/or year only (not status)."""
 
     model: str | None = Field(default=None, min_length=1, max_length=120)
-    year: int | None = Field(default=None, ge=1900, le=2100)
+    year: int | None = Field(default=None, ge=_MIN_CAR_YEAR)
+
+    @field_validator("year")
+    @classmethod
+    def year_within_range(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        max_year = _max_car_year()
+        if value > max_year:
+            raise ValueError(f"year must be <= {max_year}")
+        return value
 
     model_config = ConfigDict(
         json_schema_extra={

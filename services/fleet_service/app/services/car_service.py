@@ -1,5 +1,4 @@
 import logging
-import secrets
 from dataclasses import dataclass
 
 from drivenow_shared.enums import CarStatus, DomainEventType
@@ -7,7 +6,7 @@ from drivenow_shared.events import DomainEvent
 
 from app.core.metrics import set_active_cars, set_available_cars
 from app.domain.events import EventPublisher
-from app.domain.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.domain.exceptions import ConflictError, NotFoundError
 from app.domain.status_strategy import CarStatusStrategy
 from app.repositories.car_repository import CarRepository
 from app.repositories.models import CarModel
@@ -28,13 +27,10 @@ class CarService:
         repository: CarRepository,
         status_strategy: CarStatusStrategy,
         event_publisher: EventPublisher,
-        *,
-        internal_service_token: str,
     ) -> None:
         self._repository = repository
         self._status_strategy = status_strategy
         self._events = event_publisher
-        self._internal_service_token = internal_service_token
 
     def refresh_metrics(self) -> None:
         set_available_cars(self._repository.count_by_status(CarStatus.AVAILABLE))
@@ -127,15 +123,8 @@ class CarService:
         self,
         car_id: int,
         payload: CarStatusUpdate,
-        *,
-        caller_token: str | None = None,
     ) -> StatusUpdateResult:
         if payload.expected_status is not None:
-            self._assert_in_use_authority(
-                caller_token,
-                current=payload.expected_status,
-                new_status=payload.status,
-            )
             return self._compare_and_set_status(
                 car_id,
                 expected_status=payload.expected_status,
@@ -154,12 +143,6 @@ class CarService:
             )
             return StatusUpdateResult(car=car, changed=False)
 
-        self._assert_in_use_authority(
-            caller_token,
-            current=car.status,
-            new_status=payload.status,
-        )
-
         previous_status = car.status
         self._status_strategy.validate(car.status, payload.status)
         car.status = payload.status
@@ -168,29 +151,6 @@ class CarService:
         self._publish_update_events(previous_status, updated)
         self.refresh_metrics()
         return StatusUpdateResult(car=updated, changed=True)
-
-    def _assert_in_use_authority(
-        self,
-        caller_token: str | None,
-        *,
-        current: CarStatus,
-        new_status: CarStatus,
-    ) -> None:
-        """Rental owns in_use — public clients cannot claim or release it."""
-        if CarStatus.IN_USE not in (current, new_status):
-            return
-
-        expected = self._internal_service_token
-        provided = caller_token or ""
-        if (
-            not expected
-            or len(provided) != len(expected)
-            or not secrets.compare_digest(provided, expected)
-        ):
-            raise ForbiddenError(
-                "Transitions involving 'in_use' are restricted to rental-service "
-                "(send matching X-Internal-Token)"
-            )
 
     def _compare_and_set_status(
         self,
