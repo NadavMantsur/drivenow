@@ -1,0 +1,6 @@
+[MAIN]
+ignore-paths=services/.*/tests
+
+[MESSAGES CONTROL]
+# Keep class docs on public ports/models; skip module and obvious method docs.
+disable=missing-module-docstring,missing-function-docstring

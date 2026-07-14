@@ -10,6 +10,8 @@ from drivenow_shared.enums import DomainEventType
 
 
 class DomainEvent(BaseModel):
+    """Immutable domain event payload shared across services."""
+
     event_id: str = Field(default_factory=lambda: str(uuid4()))
     event_type: DomainEventType
     entity_type: str

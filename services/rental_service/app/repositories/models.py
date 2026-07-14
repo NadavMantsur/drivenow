@@ -6,7 +6,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
-class RentalModel(Base):
+class RentalModel(Base):  # pylint: disable=too-few-public-methods
+    """ORM row for the rentals table."""
+
     __tablename__ = "rentals"
     __table_args__ = (
         # One ongoing rental per car — closes the concurrent double-rent race at the DB.

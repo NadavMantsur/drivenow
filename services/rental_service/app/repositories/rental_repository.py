@@ -7,6 +7,8 @@ from app.repositories.models import RentalModel
 
 
 class RentalRepository(ABC):
+    """Persistence port for rentals."""
+
     @abstractmethod
     def add(self, rental: RentalModel) -> RentalModel:
         raise NotImplementedError
@@ -33,6 +35,8 @@ class RentalRepository(ABC):
 
 
 class SqlAlchemyRentalRepository(RentalRepository):
+    """SQLAlchemy implementation of RentalRepository."""
+
     def __init__(self, db: Session) -> None:
         self._db = db
 

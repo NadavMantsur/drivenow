@@ -14,8 +14,8 @@ from app.services.rental_service import RentalService
 
 
 def seed_metrics() -> None:
-    # Seed Prometheus gauges from the DB so /metrics is correct before the first
-    # mutation (same refresh path as write handlers).
+    """Seed Prometheus gauges from the DB before the first mutation."""
+    # Same refresh path as write handlers.
     settings = get_settings()
     db = SessionLocal()
     try:
@@ -30,6 +30,7 @@ def seed_metrics() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    """App startup: logging, DB schema, metric gauges."""
     settings = get_settings()
     setup_logging(settings.app_name, settings.log_dir, settings.log_level)
     init_db()
@@ -38,12 +39,13 @@ async def lifespan(_: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """Build and wire the rental FastAPI application."""
     settings = get_settings()
-    app = FastAPI(title="DriveNow Rental Service", lifespan=lifespan)
-    install_metrics_middleware(app, settings.app_name)
-    app.include_router(rentals.router)
-    app.include_router(health.router)
-    return app
+    application = FastAPI(title="DriveNow Rental Service", lifespan=lifespan)
+    install_metrics_middleware(application, settings.app_name)
+    application.include_router(rentals.router)
+    application.include_router(health.router)
+    return application
 
 
 app = create_app()

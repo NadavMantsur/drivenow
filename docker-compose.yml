@@ -24,6 +24,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://drivenow:drivenow@postgres:5432/fleet_db
       LOG_DIR: /app/logs
       LOG_LEVEL: INFO
+      TZ: Asia/Jerusalem
     ports:
       - "8001:8000"
     volumes:
@@ -54,6 +55,7 @@ services:
       FLEET_SERVICE_URL: http://fleet:8000
       LOG_DIR: /app/logs
       LOG_LEVEL: INFO
+      TZ: Asia/Jerusalem
     ports:
       - "8002:8000"
     volumes:

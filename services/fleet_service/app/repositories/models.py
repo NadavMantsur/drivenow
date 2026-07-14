@@ -6,7 +6,9 @@ from drivenow_shared.enums import CarStatus
 from app.core.database import Base
 
 
-class CarModel(Base):
+class CarModel(Base):  # pylint: disable=too-few-public-methods
+    """ORM row for the cars table."""
+
     __tablename__ = "cars"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

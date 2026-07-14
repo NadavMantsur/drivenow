@@ -9,6 +9,8 @@ from app.repositories.models import CarModel
 
 
 class CarRepository(ABC):
+    """Persistence port for cars."""
+
     @abstractmethod
     def add(self, car: CarModel) -> CarModel:
         raise NotImplementedError
@@ -49,6 +51,8 @@ class CarRepository(ABC):
 
 
 class SqlAlchemyCarRepository(CarRepository):
+    """SQLAlchemy implementation of CarRepository."""
+
     def __init__(self, db: Session) -> None:
         self._db = db
 
