@@ -37,7 +37,7 @@ def add_car(
         car = service.add_car(payload)
         return CarActionResponse(
             message=f"Car {car.id} was added successfully.",
-            car=car,
+            car=CarRead.model_validate(car),
         )
     except DomainError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -48,13 +48,16 @@ def list_cars(
     status_filter: CarStatus | None = Query(default=None, alias="status"),
     service: CarService = Depends(get_car_service),
 ) -> list[CarRead]:
-    return service.list_cars(status=status_filter)
+    return [
+        CarRead.model_validate(car)
+        for car in service.list_cars(status=status_filter)
+    ]
 
 
 @router.get("/{car_id}", response_model=CarRead)
 def get_car(car_id: int, service: CarService = Depends(get_car_service)) -> CarRead:
     try:
-        return service.get_car(car_id)
+        return CarRead.model_validate(service.get_car(car_id))
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -84,7 +87,7 @@ def update_car_details(
         car = service.update_car_details(car_id, payload)
         return CarActionResponse(
             message=f"Car {car.id} details were updated successfully.",
-            car=car,
+            car=CarRead.model_validate(car),
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -136,7 +139,9 @@ def update_car_status(
                 f"Car {result.car.id} is already '{result.car.status.value}' "
                 f"— no change applied."
             )
-        return CarActionResponse(message=message, car=result.car)
+        return CarActionResponse(
+            message=message, car=CarRead.model_validate(result.car)
+        )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ForbiddenError as exc:

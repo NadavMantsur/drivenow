@@ -12,7 +12,17 @@ from app.domain.events import NoOpEventPublisher
 from app.core.database import Base
 from app.repositories.models import RentalModel
 from app.repositories.rental_repository import SqlAlchemyRentalRepository
+from app.schemas.fleet import FleetCar
 from app.services.rental_service import RentalService
+from drivenow_shared.enums import CarStatus
+
+
+def _fleet_car(
+    car_id: int = 1,
+    *,
+    status: CarStatus = CarStatus.AVAILABLE,
+) -> FleetCar:
+    return FleetCar(id=car_id, model="Test", year=2024, status=status)
 
 
 @pytest.fixture
@@ -49,8 +59,8 @@ def client():
         repo.save.side_effect = lambda r: r
         repo.count_ongoing.return_value = 1
         repo.list.return_value = [rental, ended]
-        fleet.get_car.return_value = {"id": 1, "status": "available"}
-        fleet.update_car_status.return_value = {"id": 1, "status": "in_use"}
+        fleet.get_car.return_value = _fleet_car()
+        fleet.update_car_status.return_value = _fleet_car(status=CarStatus.IN_USE)
 
         service = RentalService(repo, fleet, NoOpEventPublisher())
         app.dependency_overrides[get_rental_service] = lambda: service
@@ -109,7 +119,7 @@ def test_register_rental_api(client):
 
 def test_end_rental_api(client):
     test_client, repo, fleet = client
-    fleet.update_car_status.return_value = {"id": 1, "status": "available"}
+    fleet.update_car_status.return_value = _fleet_car()
     response = test_client.post("/rentals/1/end")
     assert response.status_code == 200
     body = response.json()

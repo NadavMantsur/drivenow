@@ -9,8 +9,17 @@ from drivenow_shared.enums import CarStatus
 from app.domain.events import NoOpEventPublisher
 from app.domain.exceptions import ConflictError, FleetServiceError, NotFoundError
 from app.repositories.models import RentalModel
+from app.schemas.fleet import FleetCar
 from app.schemas.rental import RentalCreate
 from app.services.rental_service import RentalService
+
+
+def _fleet_car(
+    car_id: int = 1,
+    *,
+    status: CarStatus = CarStatus.AVAILABLE,
+) -> FleetCar:
+    return FleetCar(id=car_id, model="Test", year=2024, status=status)
 
 
 def _rental(
@@ -33,10 +42,7 @@ def test_register_rental_fails_when_car_not_available():
     repo = MagicMock()
     repo.has_ongoing_for_car.return_value = False
     fleet = MagicMock()
-    fleet.get_car.return_value = {
-        "id": 1,
-        "status": CarStatus.UNDER_MAINTENANCE.value,
-    }
+    fleet.get_car.return_value = _fleet_car(status=CarStatus.UNDER_MAINTENANCE)
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
 
@@ -53,10 +59,10 @@ def test_register_heals_orphan_in_use_then_claims():
     repo.count_ongoing.return_value = 1
 
     fleet = MagicMock()
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.IN_USE.value}
+    fleet.get_car.return_value = _fleet_car(status=CarStatus.IN_USE)
     fleet.update_car_status.side_effect = [
-        {"id": 1, "status": CarStatus.AVAILABLE.value},
-        {"id": 1, "status": CarStatus.IN_USE.value},
+        _fleet_car(status=CarStatus.AVAILABLE),
+        _fleet_car(status=CarStatus.IN_USE),
     ]
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
@@ -126,8 +132,8 @@ def test_register_rental_marks_car_in_use():
     repo.count_ongoing.return_value = 1
 
     fleet = MagicMock()
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.AVAILABLE.value}
-    fleet.update_car_status.return_value = {"id": 1, "status": CarStatus.IN_USE.value}
+    fleet.get_car.return_value = _fleet_car()
+    fleet.update_car_status.return_value = _fleet_car(status=CarStatus.IN_USE)
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
     result = service.register_rental(RentalCreate(car_id=1, customer_name="Alice"))
@@ -200,7 +206,7 @@ def test_end_rental_heals_when_car_already_available():
 
     fleet = MagicMock()
     fleet.update_car_status.side_effect = ConflictError("expected in_use")
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.AVAILABLE.value}
+    fleet.get_car.return_value = _fleet_car()
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
     result = service.end_rental(10)
@@ -219,7 +225,7 @@ def test_end_rental_rejects_when_car_still_unexpectedly_in_use_after_cas_conflic
 
     fleet = MagicMock()
     fleet.update_car_status.side_effect = ConflictError("expected in_use")
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.IN_USE.value}
+    fleet.get_car.return_value = _fleet_car(status=CarStatus.IN_USE)
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
 
@@ -236,7 +242,7 @@ def test_register_compensates_when_insert_fails():
     repo.add.side_effect = RuntimeError("db write failed")
 
     fleet = MagicMock()
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.AVAILABLE.value}
+    fleet.get_car.return_value = _fleet_car()
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
 
@@ -255,7 +261,7 @@ def test_register_concurrent_cas_conflict():
     repo.has_ongoing_for_car.return_value = False
 
     fleet = MagicMock()
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.AVAILABLE.value}
+    fleet.get_car.return_value = _fleet_car()
     fleet.update_car_status.side_effect = ConflictError("already claimed")
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
@@ -274,7 +280,7 @@ def test_register_concurrent_integrity_error_is_conflict_without_compensate():
     repo.add.side_effect = IntegrityError("INSERT", {}, Exception("unique"))
 
     fleet = MagicMock()
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.AVAILABLE.value}
+    fleet.get_car.return_value = _fleet_car()
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
 
@@ -293,7 +299,7 @@ def test_register_integrity_error_compensates_when_no_other_rental():
     repo.add.side_effect = IntegrityError("INSERT", {}, Exception("unique"))
 
     fleet = MagicMock()
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.AVAILABLE.value}
+    fleet.get_car.return_value = _fleet_car()
 
     service = RentalService(repo, fleet, NoOpEventPublisher())
 
@@ -313,12 +319,12 @@ def test_compensate_retries_transient_fleet_errors():
     repo.add.side_effect = RuntimeError("db write failed")
 
     fleet = MagicMock()
-    fleet.get_car.return_value = {"id": 1, "status": CarStatus.AVAILABLE.value}
+    fleet.get_car.return_value = _fleet_car()
     fleet.update_car_status.side_effect = [
-        {"id": 1, "status": CarStatus.IN_USE.value},  # claim
+        _fleet_car(status=CarStatus.IN_USE),  # claim
         FleetServiceError("blip"),
         FleetServiceError("blip"),
-        {"id": 1, "status": CarStatus.AVAILABLE.value},  # compensate ok
+        _fleet_car(),  # compensate ok
     ]
 
     service = RentalService(repo, fleet, NoOpEventPublisher())

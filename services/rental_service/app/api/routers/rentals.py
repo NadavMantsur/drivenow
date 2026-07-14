@@ -42,7 +42,7 @@ def register_rental(
                 f"Rental {rental.id} was registered successfully "
                 f"for car {rental.car_id}."
             ),
-            rental=rental,
+            rental=RentalRead.model_validate(rental),
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -62,7 +62,10 @@ def list_rentals(
     ),
     service: RentalService = Depends(get_rental_service),
 ) -> list[RentalRead]:
-    return service.list_rentals(ongoing=ongoing)
+    return [
+        RentalRead.model_validate(rental)
+        for rental in service.list_rentals(ongoing=ongoing)
+    ]
 
 
 @router.post("/{rental_id}/end", response_model=RentalActionResponse)
@@ -76,7 +79,7 @@ def end_rental(
             message=_end_rental_message(
                 result.rental.id, result.rental.car_id, result.car_release
             ),
-            rental=result.rental,
+            rental=RentalRead.model_validate(result.rental),
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

@@ -115,7 +115,7 @@ class RentalService:
             return CarStatus.AVAILABLE
         except ConflictError:
             car = self._fleet.get_car(car_id)
-            return CarStatus(car["status"])
+            return car.status
 
     def _release_car_for_end(self, car_id: int, rental_id: int) -> CarReleaseOutcome:
         """CAS in_use→available, or heal when fleet is already released / car deleted."""
@@ -146,7 +146,7 @@ class RentalService:
             )
             return CarReleaseOutcome.CAR_MISSING
 
-        status = CarStatus(car["status"])
+        status = car.status
         if status == CarStatus.AVAILABLE:
             logger.warning(
                 "Car %s is already available while ending rental %s — closing rental to heal desync",
@@ -171,9 +171,7 @@ class RentalService:
             raise ConflictError(f"Car {payload.car_id} already has an ongoing rental")
 
         car = self._fleet.get_car(payload.car_id)
-        car_status = self._heal_orphan_in_use(
-            payload.car_id, CarStatus(car["status"])
-        )
+        car_status = self._heal_orphan_in_use(payload.car_id, car.status)
         if car_status != CarStatus.AVAILABLE:
             raise ConflictError(
                 f"Car {payload.car_id} is not available (status={car_status.value})"
@@ -256,7 +254,8 @@ class RentalService:
         # Heal when fleet is already available (failed compensation / ambiguous timeout).
         car_release = self._release_car_for_end(rental.car_id, rental_id)
 
-        rental.end_date = datetime.now(timezone.utc)
+        end_date = datetime.now(timezone.utc)
+        rental.end_date = end_date
         try:
             updated = self._repository.save(rental)
         except Exception:
@@ -281,7 +280,7 @@ class RentalService:
                 entity_id=str(updated.id),
                 payload={
                     "car_id": updated.car_id,
-                    "end_date": updated.end_date.isoformat(),
+                    "end_date": end_date.isoformat(),
                     "car_release": car_release.value,
                 },
             )
