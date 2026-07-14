@@ -195,4 +195,5 @@ Tests cover status transitions, rental flows (including list/filter), compensati
 ## Logging and metrics
 
 - **Logging:** Python `logging` to console and a rotating file under `LOG_DIR`
-- **Metrics:** Prometheus gauges and histograms on `/metrics` (available cars, active/`in_use` cars, ongoing rentals, request latency and count)
+- **Metrics:** Prometheus gauges and histograms on `/metrics` (available cars, active/`in_use` cars, ongoing rentals, request latency and count; endpoint labels use route templates)
+- **Health:** `GET /health` checks database connectivity (503 if DB is down); Compose fleet healthcheck uses this so rental waits for a ready fleet+DB

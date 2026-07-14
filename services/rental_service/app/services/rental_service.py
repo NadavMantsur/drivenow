@@ -1,5 +1,7 @@
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 
 from drivenow_shared.enums import CarStatus, DomainEventType
 from drivenow_shared.events import DomainEvent
@@ -16,6 +18,21 @@ from app.schemas.rental import RentalCreate
 logger = logging.getLogger(__name__)
 
 _COMPENSATION_ATTEMPTS = 3
+
+
+class CarReleaseOutcome(str, Enum):
+    """How fleet was left when ending a rental (drives the API message)."""
+
+    RESTORED_AVAILABLE = "restored_available"
+    ALREADY_AVAILABLE = "already_available"
+    UNDER_MAINTENANCE = "under_maintenance"
+    CAR_MISSING = "car_missing"
+
+
+@dataclass(frozen=True)
+class EndRentalResult:
+    rental: RentalModel
+    car_release: CarReleaseOutcome
 
 
 class RentalService:
@@ -100,7 +117,7 @@ class RentalService:
             car = self._fleet.get_car(car_id)
             return CarStatus(car["status"])
 
-    def _release_car_for_end(self, car_id: int, rental_id: int) -> None:
+    def _release_car_for_end(self, car_id: int, rental_id: int) -> CarReleaseOutcome:
         """CAS in_use→available, or heal when fleet is already released / car deleted."""
         try:
             self._fleet.update_car_status(
@@ -108,14 +125,14 @@ class RentalService:
                 CarStatus.AVAILABLE,
                 expected_status=CarStatus.IN_USE,
             )
-            return
+            return CarReleaseOutcome.RESTORED_AVAILABLE
         except NotFoundError:
             logger.warning(
                 "Car %s not found in fleet while ending rental %s — closing rental anyway",
                 car_id,
                 rental_id,
             )
-            return
+            return CarReleaseOutcome.CAR_MISSING
         except ConflictError:
             pass
 
@@ -127,17 +144,23 @@ class RentalService:
                 car_id,
                 rental_id,
             )
-            return
+            return CarReleaseOutcome.CAR_MISSING
 
         status = CarStatus(car["status"])
-        if status in (CarStatus.AVAILABLE, CarStatus.UNDER_MAINTENANCE):
+        if status == CarStatus.AVAILABLE:
             logger.warning(
-                "Car %s is '%s' while ending rental %s — closing rental to heal desync",
+                "Car %s is already available while ending rental %s — closing rental to heal desync",
                 car_id,
-                status.value,
                 rental_id,
             )
-            return
+            return CarReleaseOutcome.ALREADY_AVAILABLE
+        if status == CarStatus.UNDER_MAINTENANCE:
+            logger.warning(
+                "Car %s is under_maintenance while ending rental %s — closing rental",
+                car_id,
+                rental_id,
+            )
+            return CarReleaseOutcome.UNDER_MAINTENANCE
 
         raise ConflictError(
             f"Cannot end rental {rental_id}: car {car_id} status is '{status.value}'"
@@ -220,8 +243,10 @@ class RentalService:
         self.refresh_metrics()
         return created
 
-    def end_rental(self, rental_id: int) -> RentalModel:
-        rental = self._repository.get_by_id(rental_id)
+    def end_rental(self, rental_id: int) -> EndRentalResult:
+        # SQL row lock via get_by_id_for_update: concurrent end waits, then sees
+        # end_date set and returns "already ended" without a second fleet CAS.
+        rental = self._repository.get_by_id_for_update(rental_id)
         if rental is None:
             raise NotFoundError(f"Rental {rental_id} not found")
         if rental.end_date is not None:
@@ -229,7 +254,7 @@ class RentalService:
 
         # Release fleet first (CAS), then commit end_date — avoids "ended but still in_use".
         # Heal when fleet is already available (failed compensation / ambiguous timeout).
-        self._release_car_for_end(rental.car_id, rental_id)
+        car_release = self._release_car_for_end(rental.car_id, rental_id)
 
         rental.end_date = datetime.now(timezone.utc)
         try:
@@ -244,9 +269,10 @@ class RentalService:
             raise
 
         logger.info(
-            "Rental %s was ended successfully; car %s is available again.",
+            "Rental %s was ended successfully (car_id=%s, car_release=%s).",
             updated.id,
             updated.car_id,
+            car_release.value,
         )
         self._events.publish(
             DomainEvent(
@@ -256,8 +282,9 @@ class RentalService:
                 payload={
                     "car_id": updated.car_id,
                     "end_date": updated.end_date.isoformat(),
+                    "car_release": car_release.value,
                 },
             )
         )
         self.refresh_metrics()
-        return updated
+        return EndRentalResult(rental=updated, car_release=car_release)

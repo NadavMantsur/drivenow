@@ -29,6 +29,7 @@ def client():
         patch("app.main.init_db"),
         patch("app.main.setup_logging"),
         patch("app.main.seed_metrics"),
+        patch("app.api.routers.health.database_ready", return_value=True),
     ):
         from app.main import create_app
 
@@ -63,6 +64,19 @@ def test_metrics_api(client):
     body = response.text
     assert "drivenow_cars_available" in body
     assert "drivenow_cars_active" in body
+
+
+def test_metrics_use_route_templates_not_raw_ids(client):
+    """Avoid Prometheus cardinality explosion from /cars/123-style labels."""
+    test_client, _ = client
+    test_client.get("/cars/1")
+    test_client.patch("/cars/1/status", json={"status": "under_maintenance"})
+    body = test_client.get("/metrics").text
+
+    assert 'endpoint="/cars/{car_id}"' in body
+    assert 'endpoint="/cars/{car_id}/status"' in body
+    assert 'endpoint="/cars/1"' not in body
+    assert 'endpoint="/cars/1/status"' not in body
 
 
 def test_add_car_api(client):
@@ -135,6 +149,12 @@ def test_internal_cas_claim_in_use_allowed(client):
     )
 
 
+def test_update_car_details_empty_body_validation(client):
+    test_client, _ = client
+    response = test_client.patch("/cars/1", json={})
+    assert response.status_code == 422
+
+
 def test_delete_car_api(client):
     test_client, _ = client
     response = test_client.delete("/cars/1")
@@ -147,6 +167,7 @@ def test_delete_car_in_use_conflict_api():
         patch("app.main.init_db"),
         patch("app.main.setup_logging"),
         patch("app.main.seed_metrics"),
+        patch("app.api.routers.health.database_ready", return_value=True),
     ):
         from app.main import create_app
 

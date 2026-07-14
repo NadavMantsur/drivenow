@@ -108,9 +108,6 @@ class CarService:
         self.refresh_metrics()
 
     def update_car_details(self, car_id: int, payload: CarDetailsUpdate) -> CarModel:
-        if payload.model is None and payload.year is None:
-            raise ConflictError("Provide at least one of model or year to update")
-
         car = self._repository.get_by_id_for_update(car_id)
         if car is None:
             raise NotFoundError(f"Car {car_id} not found")

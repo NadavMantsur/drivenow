@@ -3,9 +3,31 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import get_rental_service
 from app.domain.exceptions import ConflictError, DomainError, FleetServiceError, NotFoundError
 from app.schemas.rental import RentalActionResponse, RentalCreate, RentalRead
-from app.services.rental_service import RentalService
+from app.services.rental_service import CarReleaseOutcome, RentalService
 
 router = APIRouter(prefix="/rentals", tags=["rentals"])
+
+
+def _end_rental_message(rental_id: int, car_id: int, release: CarReleaseOutcome) -> str:
+    if release == CarReleaseOutcome.RESTORED_AVAILABLE:
+        return (
+            f"Rental {rental_id} was ended successfully "
+            f"and car {car_id} is available again."
+        )
+    if release == CarReleaseOutcome.ALREADY_AVAILABLE:
+        return (
+            f"Rental {rental_id} was ended successfully; "
+            f"car {car_id} was already available."
+        )
+    if release == CarReleaseOutcome.UNDER_MAINTENANCE:
+        return (
+            f"Rental {rental_id} was ended successfully; "
+            f"car {car_id} remains under_maintenance."
+        )
+    return (
+        f"Rental {rental_id} was ended successfully; "
+        f"car {car_id} was not found in fleet."
+    )
 
 
 @router.post("", response_model=RentalActionResponse, status_code=status.HTTP_201_CREATED)
@@ -49,13 +71,12 @@ def end_rental(
     service: RentalService = Depends(get_rental_service),
 ) -> RentalActionResponse:
     try:
-        rental = service.end_rental(rental_id)
+        result = service.end_rental(rental_id)
         return RentalActionResponse(
-            message=(
-                f"Rental {rental.id} was ended successfully "
-                f"and car {rental.car_id} is available again."
+            message=_end_rental_message(
+                result.rental.id, result.rental.car_id, result.car_release
             ),
-            rental=rental,
+            rental=result.rental,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

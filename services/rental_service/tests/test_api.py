@@ -21,6 +21,7 @@ def client():
         patch("app.main.init_db"),
         patch("app.main.setup_logging"),
         patch("app.main.seed_metrics"),
+        patch("app.api.routers.health.database_ready", return_value=True),
     ):
         from app.main import create_app
 
@@ -44,6 +45,7 @@ def client():
         repo.has_ongoing_for_car.return_value = False
         repo.add.return_value = rental
         repo.get_by_id.return_value = rental
+        repo.get_by_id_for_update.return_value = rental
         repo.save.side_effect = lambda r: r
         repo.count_ongoing.return_value = 1
         repo.list.return_value = [rental, ended]
@@ -86,6 +88,16 @@ def test_metrics_api(client):
     assert "drivenow_rentals_ongoing" in response.text
 
 
+def test_metrics_use_route_templates_not_raw_ids(client):
+    """Avoid Prometheus cardinality explosion from /rentals/123-style labels."""
+    test_client, _, _ = client
+    test_client.post("/rentals/1/end")
+    body = test_client.get("/metrics").text
+
+    assert 'endpoint="/rentals/{rental_id}/end"' in body
+    assert 'endpoint="/rentals/1/end"' not in body
+
+
 def test_register_rental_api(client):
     test_client, _, _ = client
     response = test_client.post("/rentals", json={"car_id": 1, "customer_name": "Bob"})
@@ -102,9 +114,21 @@ def test_end_rental_api(client):
     assert response.status_code == 200
     body = response.json()
     assert "ended successfully" in body["message"]
+    assert "available again" in body["message"]
     assert body["rental"]["id"] == 1
     assert body["rental"]["end_date"] is not None
     fleet.update_car_status.assert_called()
+    repo.save.assert_called()
+
+
+def test_end_rental_api_message_when_car_missing(client):
+    test_client, repo, fleet = client
+    from app.domain.exceptions import NotFoundError
+
+    fleet.update_car_status.side_effect = NotFoundError("gone")
+    response = test_client.post("/rentals/1/end")
+    assert response.status_code == 200
+    assert "not found in fleet" in response.json()["message"]
     repo.save.assert_called()
 
 

@@ -141,7 +141,7 @@ def test_register_rental_marks_car_in_use():
 def test_end_rental_restores_available():
     repo = MagicMock()
     rental = _rental(10)
-    repo.get_by_id.return_value = rental
+    repo.get_by_id_for_update.return_value = rental
     repo.save.side_effect = lambda r: r
     repo.count_ongoing.return_value = 0
 
@@ -149,17 +149,33 @@ def test_end_rental_restores_available():
     service = RentalService(repo, fleet, NoOpEventPublisher())
     result = service.end_rental(10)
 
-    assert result.end_date is not None
+    assert result.rental.end_date is not None
+    assert result.car_release.value == "restored_available"
+    repo.get_by_id_for_update.assert_called_once_with(10)
     fleet.update_car_status.assert_called_once_with(
         1, CarStatus.AVAILABLE, expected_status=CarStatus.IN_USE
     )
+
+
+def test_end_rental_concurrent_loser_sees_already_ended():
+    """After FOR UPDATE, second ender observes end_date and skips fleet."""
+    repo = MagicMock()
+    repo.get_by_id_for_update.return_value = _rental(10, ended=True)
+    fleet = MagicMock()
+    service = RentalService(repo, fleet, NoOpEventPublisher())
+
+    with pytest.raises(ConflictError, match="already ended"):
+        service.end_rental(10)
+
+    fleet.update_car_status.assert_not_called()
+    repo.save.assert_not_called()
 
 
 def test_end_rental_closes_when_car_already_deleted_from_fleet():
     """Orphan rental: fleet car is gone — still set end_date."""
     repo = MagicMock()
     rental = _rental(6, car_id=2)
-    repo.get_by_id.return_value = rental
+    repo.get_by_id_for_update.return_value = rental
     repo.save.side_effect = lambda r: r
     repo.count_ongoing.return_value = 0
 
@@ -169,7 +185,8 @@ def test_end_rental_closes_when_car_already_deleted_from_fleet():
     service = RentalService(repo, fleet, NoOpEventPublisher())
     result = service.end_rental(6)
 
-    assert result.end_date is not None
+    assert result.rental.end_date is not None
+    assert result.car_release.value == "car_missing"
     repo.save.assert_called_once()
 
 
@@ -177,7 +194,7 @@ def test_end_rental_heals_when_car_already_available():
     """Desync: fleet available + ongoing rental (failed compensate) — still close."""
     repo = MagicMock()
     rental = _rental(10)
-    repo.get_by_id.return_value = rental
+    repo.get_by_id_for_update.return_value = rental
     repo.save.side_effect = lambda r: r
     repo.count_ongoing.return_value = 0
 
@@ -188,7 +205,8 @@ def test_end_rental_heals_when_car_already_available():
     service = RentalService(repo, fleet, NoOpEventPublisher())
     result = service.end_rental(10)
 
-    assert result.end_date is not None
+    assert result.rental.end_date is not None
+    assert result.car_release.value == "already_available"
     repo.save.assert_called_once()
     fleet.get_car.assert_called_once_with(1)
 
@@ -197,7 +215,7 @@ def test_end_rental_rejects_when_car_still_unexpectedly_in_use_after_cas_conflic
     """CAS conflict then re-read shows in_use (race) — do not close rental."""
     repo = MagicMock()
     rental = _rental(10)
-    repo.get_by_id.return_value = rental
+    repo.get_by_id_for_update.return_value = rental
 
     fleet = MagicMock()
     fleet.update_car_status.side_effect = ConflictError("expected in_use")
@@ -315,7 +333,7 @@ def test_end_aborts_when_fleet_restore_fails():
     """Fleet CAS fails before DB write — rental stays open."""
     repo = MagicMock()
     rental = _rental(10)
-    repo.get_by_id.return_value = rental
+    repo.get_by_id_for_update.return_value = rental
 
     fleet = MagicMock()
     fleet.update_car_status.side_effect = FleetServiceError("fleet down")
@@ -333,7 +351,7 @@ def test_end_compensates_when_persist_fails_after_fleet():
     """Fleet restored available, then DB save fails → compensate car back to in_use."""
     repo = MagicMock()
     rental = _rental(10)
-    repo.get_by_id.return_value = rental
+    repo.get_by_id_for_update.return_value = rental
     repo.save.side_effect = RuntimeError("db write failed")
 
     fleet = MagicMock()

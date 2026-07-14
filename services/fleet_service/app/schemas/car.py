@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from drivenow_shared.enums import CarStatus
 
@@ -19,6 +19,12 @@ class CarDetailsUpdate(BaseModel):
             "example": {"model": "Corolla Hybrid", "year": 2025},
         }
     )
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> "CarDetailsUpdate":
+        if self.model is None and self.year is None:
+            raise ValueError("Provide at least one of model or year to update")
+        return self
 
 
 class CarStatusUpdate(BaseModel):

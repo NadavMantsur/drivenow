@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.repositories.models import RentalModel
@@ -15,6 +15,11 @@ class RentalRepository(ABC):
 
     @abstractmethod
     def get_by_id(self, rental_id: int) -> RentalModel | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_id_for_update(self, rental_id: int) -> RentalModel | None:
+        """Load rental with a SQL row lock (SELECT ... FOR UPDATE) for end_rental."""
         raise NotImplementedError
 
     @abstractmethod
@@ -49,6 +54,12 @@ class SqlAlchemyRentalRepository(RentalRepository):
     def get_by_id(self, rental_id: int) -> RentalModel | None:
         return self._db.get(RentalModel, rental_id)
 
+    def get_by_id_for_update(self, rental_id: int) -> RentalModel | None:
+        # SQL row lock (SELECT ... FOR UPDATE): held until this session commits/rolls back.
+        # Serializes concurrent end_rental on the same row across workers/containers.
+        stmt = select(RentalModel).where(RentalModel.id == rental_id).with_for_update()
+        return self._db.scalars(stmt).first()
+
     def save(self, rental: RentalModel) -> RentalModel:
         self._db.add(rental)
         self._db.commit()
@@ -56,8 +67,12 @@ class SqlAlchemyRentalRepository(RentalRepository):
         return rental
 
     def count_ongoing(self) -> int:
-        stmt = select(RentalModel).where(RentalModel.end_date.is_(None))
-        return len(list(self._db.scalars(stmt).all()))
+        stmt = (
+            select(func.count())
+            .select_from(RentalModel)
+            .where(RentalModel.end_date.is_(None))
+        )
+        return int(self._db.scalar(stmt) or 0)
 
     def has_ongoing_for_car(self, car_id: int) -> bool:
         stmt = select(RentalModel).where(

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from drivenow_shared.enums import CarStatus
@@ -104,5 +104,9 @@ class SqlAlchemyCarRepository(CarRepository):
         return self.get_by_id(car_id)
 
     def count_by_status(self, status: CarStatus) -> int:
-        stmt = select(CarModel).where(CarModel.status == status)
-        return len(list(self._db.scalars(stmt).all()))
+        stmt = (
+            select(func.count())
+            .select_from(CarModel)
+            .where(CarModel.status == status)
+        )
+        return int(self._db.scalar(stmt) or 0)
